@@ -1,0 +1,192 @@
+"""Tests for verifier — closure_progress + verify."""
+import pytest
+from pathlib import Path
+from src.contracts import (
+    Action, Observation, TreeNode, SearchResult,
+    PerceptualFact, Query,
+)
+
+DATA = Path(__file__).resolve().parent.parent / "data" / "ontology"
+
+
+@pytest.fixture
+def dag():
+    from src.ontology.dag import OntologyDAG
+    return OntologyDAG(str(DATA / "dag.yaml"), str(DATA / "exclusion_lists.yaml"), str(DATA / "anatomy_zones.yaml"))
+
+
+def _fact(concept, bbox=(100, 200, 300, 400), lat="midline", conf=0.85):
+    return PerceptualFact(concept=concept, bbox=bbox, laterality=lat, conf=conf)
+
+
+def _query(qtype, target=None, constraints=None):
+    return Query(
+        type=qtype, target=target, constraints=constraints or {},
+        raw_question="test", parse_confidence=1.0, parser_tier="rule",
+    )
+
+
+def _action(tool, **kwargs):
+    return Action(tool=tool, args=kwargs)
+
+
+def _obs(result, ok=True):
+    return Observation(result=result, ok=ok)
+
+
+# --- closure_progress ---
+
+def test_progress_existential_witness_found(dag):
+    from src.engine.verifier import closure_progress
+    node = TreeNode(
+        state_facts=[_fact("Cardiomegaly")],
+        history=[
+            (_action("is_a", node="cardiomegaly", target="cardiac_abnormality"),
+             _obs(["cardiomegaly", "cardiac_abnormality"])),
+        ],
+    )
+    query = _query("existential", target="cardiac_abnormality")
+    assert closure_progress(node, query, dag) == 1.0
+
+
+def test_progress_existential_no_witness(dag):
+    from src.engine.verifier import closure_progress
+    node = TreeNode(
+        state_facts=[_fact("Cardiomegaly")],
+        history=[
+            (_action("is_a", node="cardiomegaly", target="pulmonary_abnormality"),
+             _obs(None, ok=False)),
+        ],
+    )
+    query = _query("existential", target="pulmonary_abnormality")
+    p = closure_progress(node, query, dag)
+    assert 0.0 < p < 1.0
+
+
+def test_progress_negation_all_absent(dag):
+    from src.engine.verifier import closure_progress
+    node = TreeNode(
+        state_facts=[],
+        history=[
+            (_action("get_exclusion_list", name="Cardiomegaly"),
+             _obs(["cardiomegaly"])),
+        ],
+    )
+    query = _query("negation", target="Cardiomegaly")
+    p = closure_progress(node, query, dag)
+    assert p > 0.0
+
+
+def test_progress_negation_missing_list(dag):
+    from src.engine.verifier import closure_progress
+    node = TreeNode(
+        state_facts=[],
+        history=[
+            (_action("get_exclusion_list", name="NonexistentFinding"),
+             _obs(None, ok=False)),
+        ],
+    )
+    query = _query("negation", target="NonexistentFinding")
+    p = closure_progress(node, query, dag)
+    assert p == 0.0
+
+
+def test_progress_relational_resolved(dag):
+    from src.engine.verifier import closure_progress
+    node = TreeNode(
+        state_facts=[_fact("Cardiomegaly", bbox=(100, 200, 360, 450))],
+        history=[
+            (_action("anatomy_of", bbox=[100, 200, 360, 450]),
+             _obs("mediastinum")),
+        ],
+    )
+    query = _query("relational", target="Cardiomegaly", constraints={"attr": "location"})
+    assert closure_progress(node, query, dag) == 1.0
+
+
+def test_progress_counting(dag):
+    from src.engine.verifier import closure_progress
+    facts = [_fact("Cardiomegaly"), _fact("Consolidation"), _fact("Pleural effusion")]
+    node = TreeNode(state_facts=facts, history=[])
+    query = _query("counting")
+    assert closure_progress(node, query, dag) == 1.0
+
+
+def test_progress_disjoint_penalty(dag):
+    from src.engine.verifier import closure_progress
+    node = TreeNode(
+        state_facts=[_fact("Pneumothorax"), _fact("Pleural effusion")],
+        history=[
+            (_action("disjoint", a="pneumothorax", b="pleural_effusion"),
+             _obs(True)),
+        ],
+    )
+    query = _query("existential", target="pneumothorax")
+    assert closure_progress(node, query, dag) == 0.0
+
+
+# --- verify ---
+
+def test_verify_existential_tier_a(dag):
+    from src.engine.verifier import verify
+    node = TreeNode(
+        state_facts=[_fact("Cardiomegaly")],
+        history=[
+            (_action("is_a", node="cardiomegaly", target="cardiac_abnormality"),
+             _obs(["cardiomegaly", "cardiac_abnormality"])),
+        ],
+        answer="Yes",
+    )
+    query = _query("existential", target="cardiac_abnormality")
+    result = verify(node, query, dag)
+    assert result.tier == "A"
+    assert result.answer == "Yes"
+    assert len(result.path) == 1
+
+
+def test_verify_negation_absent_tier_a(dag):
+    from src.engine.verifier import verify
+    node = TreeNode(
+        state_facts=[],
+        history=[
+            (_action("get_exclusion_list", name="Cardiomegaly"),
+             _obs(["cardiomegaly"])),
+        ],
+        answer="No Cardiomegaly found",
+    )
+    query = _query("negation", target="Cardiomegaly")
+    result = verify(node, query, dag)
+    assert result.tier == "A"
+
+
+def test_verify_negation_missing_list_abstain(dag):
+    from src.engine.verifier import verify
+    node = TreeNode(
+        state_facts=[],
+        history=[
+            (_action("get_exclusion_list", name="FakeFinding"),
+             _obs(None, ok=False)),
+        ],
+        answer="No FakeFinding",
+    )
+    query = _query("negation", target="FakeFinding")
+    result = verify(node, query, dag)
+    assert result.tier == "ABSTAIN"
+
+
+def test_verify_counting_tier_a(dag):
+    from src.engine.verifier import verify
+    facts = [_fact("Cardiomegaly"), _fact("Consolidation")]
+    node = TreeNode(state_facts=facts, history=[], answer="2")
+    query = _query("counting")
+    result = verify(node, query, dag)
+    assert result.tier == "A"
+    assert result.answer == "2"
+
+
+def test_verify_open_tier_b(dag):
+    from src.engine.verifier import verify
+    node = TreeNode(state_facts=[_fact("Cardiomegaly")], history=[], answer="Cardiomegaly visible")
+    query = _query("open")
+    result = verify(node, query, dag)
+    assert result.tier == "B"
