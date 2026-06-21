@@ -52,6 +52,8 @@ def _progress_existential(node, query, dag):
     for action, obs in node.history:
         if action.tool == "is_a" and obs.ok and obs.result:
             return 1.0
+    if _has_direct_match(node, query, dag):
+        return 1.0
     target_slug = dag.get_node_by_name(query.target) if query.target else None
     if target_slug and dag.get_node(target_slug):
         return 0.2
@@ -66,6 +68,11 @@ def _verify_existential(node, query, dag):
                 answer=node.answer or "Yes", tier="A", path=path,
                 conf=_min_conf(node),
             )
+    if _has_direct_match(node, query, dag):
+        return SearchResult(
+            answer=node.answer or "Yes", tier="A", path=path,
+            conf=_min_conf(node),
+        )
     return SearchResult(answer=node.answer or "", tier="ABSTAIN", path=path, conf=0.0)
 
 
@@ -140,6 +147,22 @@ def _verify_counting(node, query, dag):
 
 
 # --- helpers ---
+
+def _has_direct_match(node, query, dag):
+    """Check if any fact concept resolves to the query target (identity match)."""
+    if not query.target:
+        return False
+    target_slug = dag.get_node_by_name(query.target)
+    if target_slug is None:
+        target_slug = query.target.lower().replace(" ", "_").replace("/", "_")
+    for fact in node.state_facts:
+        fact_slug = dag.get_node_by_name(fact.concept)
+        if fact_slug is None:
+            fact_slug = fact.concept.lower().replace(" ", "_").replace("/", "_")
+        if fact_slug == target_slug:
+            return True
+    return False
+
 
 def _has_disjoint_violation(node):
     for action, obs in node.history:
