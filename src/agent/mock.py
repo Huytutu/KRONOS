@@ -1,5 +1,6 @@
 """MockAgent — scripted actions per question type, for deterministic tests."""
 from src.contracts import Action, TreeNode, Query
+from src.ontology.dag import slugify
 
 
 class MockAgent:
@@ -25,10 +26,10 @@ class MockAgent:
 
     def _existential(self, node, query, k):
         results = []
-        target_slug = _name_to_slug(query.target)
+        target_slug = slugify(query.target) or "unknown"
 
         for fact in node.state_facts:
-            slug = _name_to_slug(fact.concept)
+            slug = slugify(fact.concept)
             results.append(Action(
                 tool="is_a",
                 args={"node": slug, "target": target_slug},
@@ -87,7 +88,7 @@ class MockAgent:
         results = []
 
         for fact in node.state_facts:
-            if _name_to_slug(fact.concept) == _name_to_slug(query.target):
+            if slugify(fact.concept) == slugify(query.target):
                 bbox = list(fact.bbox)
                 if attr == "laterality":
                     results.append(Action(
@@ -113,9 +114,3 @@ class MockAgent:
     def _open(self, node, query, k):
         names = [f.concept for f in node.state_facts]
         return [", ".join(names) if names else "No findings"]
-
-
-def _name_to_slug(name):
-    if name is None:
-        return "unknown"
-    return name.lower().replace(" ", "_").replace("/", "_")

@@ -99,48 +99,19 @@ class LLaVAMedAgent:
     def parse_output(self, raw):
         if not raw or not isinstance(raw, str):
             return []
-
         raw = raw.strip()
 
         answer_match = re.search(r'Answer\[(.+?)\]', raw)
         if answer_match:
             return [answer_match.group(1)]
 
-        try:
-            parsed = json.loads(raw)
-            if isinstance(parsed, list):
-                actions = []
-                for item in parsed:
-                    if isinstance(item, dict) and "tool" in item:
-                        kind = "visual" if item["tool"] in ("inspect", "re_detect", "compare") else "symbolic"
-                        actions.append(Action(
-                            tool=item["tool"],
-                            args=item.get("args", {}),
-                            kind=kind,
-                        ))
-                return actions
-        except (json.JSONDecodeError, TypeError, KeyError):
-            pass
-
+        # Try the whole string as JSON, then a bracketed substring.
+        actions = _parse_action_array(raw)
+        if actions:
+            return actions
         json_match = re.search(r'\[.*\]', raw, re.DOTALL)
         if json_match:
-            try:
-                parsed = json.loads(json_match.group())
-                if isinstance(parsed, list):
-                    actions = []
-                    for item in parsed:
-                        if isinstance(item, dict) and "tool" in item:
-                            kind = "visual" if item["tool"] in ("inspect", "re_detect", "compare") else "symbolic"
-                            actions.append(Action(
-                                tool=item["tool"],
-                                args=item.get("args", {}),
-                                kind=kind,
-                            ))
-                    if actions:
-                        return actions
-            except (json.JSONDecodeError, TypeError):
-                pass
-
+            return _parse_action_array(json_match.group())
         return []
 
     def _run_model(self, prompt):
@@ -153,3 +124,23 @@ class LLaVAMedAgent:
                 temperature=1.0, do_sample=False,
             )
         return self._processor.decode(outputs[0], skip_special_tokens=True)
+
+
+VISUAL_TOOLS = ("inspect", "re_detect", "compare")
+
+
+def _parse_action_array(text):
+    """Parse a JSON array of {tool, args} dicts into Action objects. [] on failure."""
+    try:
+        parsed = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+
+    actions = []
+    for item in parsed:
+        if isinstance(item, dict) and "tool" in item:
+            kind = "visual" if item["tool"] in VISUAL_TOOLS else "symbolic"
+            actions.append(Action(tool=item["tool"], args=item.get("args", {}), kind=kind))
+    return actions

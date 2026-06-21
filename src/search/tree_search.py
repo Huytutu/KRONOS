@@ -10,6 +10,7 @@ from src.contracts import Action, Observation, TreeNode, SearchResult, Query, Pe
 from src.tools.dispatch import run_tool
 from src.tools.visual import fold_facts
 from src.engine.verifier import closure_progress, verify
+from src.ontology.dag import slugify
 
 DEFAULT_IMG_WH = (2304, 2880)
 
@@ -100,8 +101,8 @@ def _derive_answer(node, query):
             if action.tool == "is_a" and obs.ok and obs.result:
                 return "Yes"
         # Direct match: fact concept matches target (identity, no is-a hop needed)
-        target_slug = query.target.lower().replace(" ", "_").replace("/", "_") if query.target else ""
-        fact_slugs = {f.concept.lower().replace(" ", "_").replace("/", "_") for f in node.state_facts}
+        target_slug = slugify(query.target)
+        fact_slugs = {slugify(f.concept) for f in node.state_facts}
         if target_slug in fact_slugs:
             return "Yes"
         return "No"

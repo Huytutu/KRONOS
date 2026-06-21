@@ -49,10 +49,7 @@ def verify(node, query, dag):
 # --- existential ---
 
 def _progress_existential(node, query, dag):
-    for action, obs in node.history:
-        if action.tool == "is_a" and obs.ok and obs.result:
-            return 1.0
-    if _has_direct_match(node, query, dag):
+    if _has_witness(node) or _has_direct_match(node, query, dag):
         return 1.0
     target_slug = dag.get_node_by_name(query.target) if query.target else None
     if target_slug and dag.get_node(target_slug):
@@ -62,16 +59,9 @@ def _progress_existential(node, query, dag):
 
 def _verify_existential(node, query, dag):
     path = list(node.history)
-    for action, obs in node.history:
-        if action.tool == "is_a" and obs.ok and obs.result:
-            return SearchResult(
-                answer=node.answer or "Yes", tier="A", path=path,
-                conf=_min_conf(node),
-            )
-    if _has_direct_match(node, query, dag):
+    if _has_witness(node) or _has_direct_match(node, query, dag):
         return SearchResult(
-            answer=node.answer or "Yes", tier="A", path=path,
-            conf=_min_conf(node),
+            answer=node.answer or "Yes", tier="A", path=path, conf=_min_conf(node),
         )
     return SearchResult(answer=node.answer or "", tier="ABSTAIN", path=path, conf=0.0)
 
@@ -148,20 +138,20 @@ def _verify_counting(node, query, dag):
 
 # --- helpers ---
 
+def _has_witness(node):
+    """True if any is_a action in history found a path (existential witness)."""
+    return any(
+        action.tool == "is_a" and obs.ok and obs.result
+        for action, obs in node.history
+    )
+
+
 def _has_direct_match(node, query, dag):
-    """Check if any fact concept resolves to the query target (identity match)."""
+    """True if any fact concept resolves to the query target (identity match)."""
     if not query.target:
         return False
-    target_slug = dag.get_node_by_name(query.target)
-    if target_slug is None:
-        target_slug = query.target.lower().replace(" ", "_").replace("/", "_")
-    for fact in node.state_facts:
-        fact_slug = dag.get_node_by_name(fact.concept)
-        if fact_slug is None:
-            fact_slug = fact.concept.lower().replace(" ", "_").replace("/", "_")
-        if fact_slug == target_slug:
-            return True
-    return False
+    target_slug = dag.resolve_slug(query.target)
+    return any(dag.resolve_slug(f.concept) == target_slug for f in node.state_facts)
 
 
 def _has_disjoint_violation(node):

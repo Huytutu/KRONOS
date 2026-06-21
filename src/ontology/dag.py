@@ -2,6 +2,13 @@ import yaml
 import networkx as nx
 
 
+def slugify(name):
+    """Canonical name -> DAG slug (e.g. 'Nodule/Mass' -> 'nodule_mass')."""
+    if not name:
+        return ""
+    return name.lower().replace(" ", "_").replace("/", "_")
+
+
 class OntologyDAG:
     """Small curated ontology DAG for symbolic reasoning.
 
@@ -56,6 +63,10 @@ class OntologyDAG:
 
     def get_node_by_name(self, name):
         return self._name_to_id.get(name)
+
+    def resolve_slug(self, name):
+        """Canonical name -> slug: known node name, else slugify fallback."""
+        return self._name_to_id.get(name) or slugify(name)
 
     def children(self, node_id):
         """Return direct is-a children (nodes whose is-a target is node_id)."""
