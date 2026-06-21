@@ -1,5 +1,9 @@
 # Plan — v4 Neural Layer
 
+> **Status: ✅ COMPLETE.** Both the deterministic core (v4_core_SPEC) and this neural
+> layer are implemented and tested (261 CPU tests pass, GPU tests skipped). See
+> [README.md](../README.md) for current status and next steps.
+
 Source: [v4_neural_SPEC.md](../v4_neural_SPEC.md)
 
 All unit tests mock VLM/detector (no GPU needed to pass). Integration tests
