@@ -11,7 +11,7 @@
 
 ---
 
-## Task 1: Index layer — `src/retrieval/index.py` + fixture + tests
+## Task 1: Index layer — `src/retrieval/index.py` + fixture + tests ✅
 
 Create `src/retrieval/` package. Implement `BruteForceIndex` (numpy, CPU) and
 `RagIndex` (faiss, optional import). Both share `.search(query_emb, k) →
@@ -31,7 +31,7 @@ Create `src/retrieval/` package. Implement `BruteForceIndex` (numpy, CPU) and
 
 ---
 
-## Task 2: Retriever + tool wrapper — `src/retrieval/retriever.py`, `src/retrieval/tool.py` + tests
+## Task 2: Retriever + tool wrapper — `src/retrieval/retriever.py`, `src/retrieval/tool.py` + tests ✅
 
 `Retriever` holds an index + cached query_emb. `set_image(emb)` caches the
 embedding (encoder not wired yet — raw emb for now). `retrieve(k)` → list of
@@ -50,7 +50,7 @@ case dicts with score. `run_retrieve(action, retriever) → Observation`.
 
 ---
 
-## Task 3: Wire into dispatch / search / pipeline
+## Task 3: Wire into dispatch / search / pipeline ✅
 
 Route `retrieve` in `dispatch.run_tool` (flat early-return before kind branch).
 Thread `retriever=None` through `search()` and `pipeline.run()`. No fact-folding
@@ -68,7 +68,7 @@ degrades gracefully (`ok=False`).
 
 ---
 
-## Task 4: Faithfulness guard tests
+## Task 4: Faithfulness guard tests ✅
 
 The load-bearing guarantee: retrieve is inert to Tier-A. Tests use MockAgent +
 existing DAG fixtures.
@@ -84,7 +84,7 @@ existing DAG fixtures.
 
 ---
 
-## Task 5: Encoder + build script + GPU integration
+## Task 5: Encoder + build script + GPU integration ✅
 
 BiomedCLIP encoder (`src/retrieval/encoder.py`), corpus build script
 (`scripts/build_rag_index.py`), and GPU integration test extension.
