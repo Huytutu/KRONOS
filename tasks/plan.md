@@ -1,70 +1,77 @@
-# Plan — v4 Deterministic Core
+# Plan — v4 Neural Layer
 
-Source: [v4_core_SPEC.md](../v4_core_SPEC.md)
+Source: [v4_neural_SPEC.md](../v4_neural_SPEC.md)
 
-## Task 1: Update contracts — add v4 types, remove Candidate
+All unit tests mock VLM/detector (no GPU needed to pass). Integration tests
+marked `@pytest.mark.gpu` are written but skipped without GPU.
 
-Add `Tier`, `ToolName`, `Action`, `Observation`, `TreeNode`, `SearchResult` to
-`src/contracts.py`. Remove `Candidate` (v2 multi-head type). Add `QType` value
-`"open"` for Tier-B questions.
+## Task 1: Visual tools — `src/tools/visual.py`
 
-**Depends on:** nothing  
-**Accept:** `Action(tool="is_a", args={"node":"x","target":"y"})` builds;
-`TreeNode` holds history of `(Action, Observation)` pairs; `SearchResult` has
-`tier ∈ {"A","B","ABSTAIN"}`. Existing tests still pass (no regressions in
-parser/linker/dag tests).
+Implement `inspect`, `re_detect`, `compare` as functions taking Action + image +
+detector/vlm → Observation. All VLM/detector calls go through injectable
+callables (for mocking). Include fact-folding helper (new facts → merge into
+state_facts, dedup by IoU > 0.5).
 
----
-
-## Task 2: Symbolic tool layer — `src/tools/symbolic.py`
-
-Create `run_tool(action, facts, dag, img_wh) → Observation` that dispatches
-on `action.tool` to the matching `OntologyDAG` method. Pure function.
-
-**Depends on:** Task 1 (Action, Observation types)  
-**Accept:** `run_tool(Action(tool="is_a", args={"node":"cardiomegaly","target":"cardiac_abnormality"}), ..., dag, ...)` returns `Observation(result=["cardiomegaly","cardiac_abnormality"], ok=True)`. All 6 tools dispatch correctly. Unit tests in `tests/test_symbolic_tools.py`.
+**Depends on:** v4 core (contracts, symbolic tools)
+**Accept:** With mocked VLM/detector responses:
+- `inspect` → parses to PerceptualFact.
+- `re_detect` → returns facts with bbox mapped to original coords.
+- `compare` → parses comparison result.
+- Malformed VLM output → `ok=False`.
+- Fact-fold deduplicates by IoU.
+- Tests in `tests/test_visual_tools.py`.
 
 ---
 
-## Task 3: Verifier — `src/engine/verifier.py`
+## Task 2: Unified tool dispatch — refactor `src/tools/`
 
-Implement `closure_progress(node, query, dag) → float` and
-`verify(node, query, dag) → SearchResult`.
+Rename `symbolic.py` logic, create `src/tools/dispatch.py` that routes:
+- `action.kind == "symbolic"` → existing symbolic dispatch
+- `action.kind == "visual"` → new visual dispatch
+Update `tree_search.py` to call `dispatch.run_tool(...)` with optional
+`image`/`detector`/`vlm` params. Visual actions gracefully return `ok=False`
+when image is None.
 
-**Depends on:** Task 1 (TreeNode, SearchResult), Task 2 (run_tool for replay)  
-**Accept:**
-- existential: witness found → progress 1.0, verify → Tier A.
-- negation: all exclusions absent → Tier A; one present → conf=0; missing list → ABSTAIN.
-- relational: anatomy resolved → Tier A.
-- counting: count matches → Tier A.
-- disjoint violation in history → reward 0.
-- Unit tests in `tests/test_verifier.py`.
-
----
-
-## Task 4: Agent interface + MockAgent
-
-Create `src/agent/base.py` with `Agent` Protocol (`propose_actions(node, query, k) → list`).
-Create `src/agent/mock.py` with `MockAgent` returning scripted actions per question type.
-
-**Depends on:** Task 1 (Action, TreeNode, Query)  
-**Accept:** `MockAgent().propose_actions(node, query, 3)` returns a list of
-`Action` objects appropriate for the query type. Unit tests in `tests/test_mock_agent.py`.
+**Depends on:** Task 1
+**Accept:** Tree search works with both MockAgent (symbolic only, no image) and
+visual actions (with mocked image+vlm). All existing 245 tests still pass.
+Tests in `tests/test_dispatch.py`.
 
 ---
 
-## Task 5: Tree search — `src/search/tree_search.py`
+## Task 3: LLaVA-Med Agent — `src/agent/llavamed.py`
 
-Implement `search(query, facts, dag, agent, budget, k) → SearchResult`.
-Best-first: expand highest-reward node, run tools, evaluate with verifier,
-backtrack implicitly via frontier.
+Implement `LLaVAMedAgent` satisfying `Agent` Protocol. Model loading via factory
+`load_llavamed(path, quantize)`. Prompt construction from
+(query, facts, history, tools, reflection). Output parsing: JSON action list or
+`Answer[...]`. Malformed → empty list.
 
-**Depends on:** Task 2, Task 3, Task 4  
-**Accept:**
-- Existential 2-hop: finds witness via MockAgent, returns Tier A, path matches
-  `reachable_is_a` path.
-- Backtrack: dead branch first, valid branch second → still Tier A.
-- Budget exhausted → ABSTAIN.
-- Determinism: same inputs → identical result 100 runs.
-- Deletion test: remove witness fact → answer flips.
-- Unit tests in `tests/test_tree_search.py`.
+**Depends on:** Task 2 (unified dispatch), v4 core (Agent Protocol)
+**Accept:** With mocked VLM inference:
+- Prompt contains question + facts + tool list + history.
+- JSON output `[{"tool":"is_a",...}]` → list of Action.
+- `Answer[Yes]` → list with string.
+- Malformed → empty list.
+- Tests in `tests/test_llavamed_agent.py`.
+
+---
+
+## Task 4: End-to-end pipeline — `src/pipeline.py`
+
+Tie everything: `run(image_path, question, dag, detector, agent)` → SearchResult.
+Loads image, runs detector, parses question, sets image on agent, calls search.
+
+**Depends on:** Task 2, Task 3
+**Accept:** With MockAgent + oracle detector (existing `src/perception/oracle.py`) →
+end-to-end returns SearchResult with tier + path. Test in `tests/test_pipeline.py`.
+
+---
+
+## Task 5: GPU integration tests (write but skip)
+
+Write `tests/test_integration_gpu.py` with `@pytest.mark.gpu`. Tests load real
+LLaVA-Med + real YOLO, run on a sample image, verify SearchResult. These tests
+are **skipped** without GPU (the user runs them on their server).
+
+**Depends on:** Task 3, Task 4
+**Accept:** Tests exist, are properly marked, and are skipped in normal pytest run.
