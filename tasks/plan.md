@@ -1,81 +1,103 @@
-# Plan — v4 Neural Layer
+# Plan — E_rag (the `retrieve` tool)
 
-> **Status: ✅ COMPLETE.** Both the deterministic core (v4_core_SPEC) and this neural
-> layer are implemented and tested (261 CPU tests pass, GPU tests skipped). See
-> [README.md](../README.md) for current status and next steps.
-
-Source: [v4_neural_SPEC.md](../v4_neural_SPEC.md)
-
-All unit tests mock VLM/detector (no GPU needed to pass). Integration tests
-marked `@pytest.mark.gpu` are written but skipped without GPU.
-
-## Task 1: Visual tools — `src/tools/visual.py`
-
-Implement `inspect`, `re_detect`, `compare` as functions taking Action + image +
-detector/vlm → Observation. All VLM/detector calls go through injectable
-callables (for mocking). Include fact-folding helper (new facts → merge into
-state_facts, dedup by IoU > 0.5).
-
-**Depends on:** v4 core (contracts, symbolic tools)
-**Accept:** With mocked VLM/detector responses:
-- `inspect` → parses to PerceptualFact.
-- `re_detect` → returns facts with bbox mapped to original coords.
-- `compare` → parses comparison result.
-- Malformed VLM output → `ok=False`.
-- Fact-fold deduplicates by IoU.
-- Tests in `tests/test_visual_tools.py`.
+> Source: [E_rag_SPEC.md](../E_rag_SPEC.md)
+>
+> Build the `retrieve` tool end-to-end: FAISS index over VinDr-CXR train cases
+> (embedded by frozen BiomedCLIP), wired into dispatch/search/pipeline.
+> Advisory only — never closes Tier-A; faithfulness guard tests prove it.
+>
+> CPU tests use a numpy BruteForceIndex + fixture embeddings (no GPU, no faiss).
+> Neural encoder + real index behind `@pytest.mark.gpu`.
 
 ---
 
-## Task 2: Unified tool dispatch — refactor `src/tools/`
+## Task 1: Index layer — `src/retrieval/index.py` + fixture + tests
 
-Rename `symbolic.py` logic, create `src/tools/dispatch.py` that routes:
-- `action.kind == "symbolic"` → existing symbolic dispatch
-- `action.kind == "visual"` → new visual dispatch
-Update `tree_search.py` to call `dispatch.run_tool(...)` with optional
-`image`/`detector`/`vlm` params. Visual actions gracefully return `ok=False`
-when image is None.
+Create `src/retrieval/` package. Implement `BruteForceIndex` (numpy, CPU) and
+`RagIndex` (faiss, optional import). Both share `.search(query_emb, k) →
+[(score, case_dict), ...]` sorted descending. Create a tiny fixture
+(`tests/fixtures/rag_fixture.npz`) with ~12 synthetic 512-d normalised embeddings
++ matching case dicts.
+
+**Depends on:** nothing
+**Files:** `src/retrieval/__init__.py`, `src/retrieval/index.py`,
+  `tests/fixtures/rag_fixture.npz`, `tests/test_retrieval_index.py`
+**Accept:**
+- `BruteForceIndex.search(q, k)` returns exactly k results, descending score.
+- Self-query (q = indexed embedding) → that case ranks #1, score ≈ 1.0.
+- Determinism: 100 identical queries → identical ordering.
+- `RagIndex` matches `BruteForceIndex` on same vectors (skip if faiss not installed).
+- All tests pass: `pytest tests/test_retrieval_index.py -v`
+
+---
+
+## Task 2: Retriever + tool wrapper — `src/retrieval/retriever.py`, `src/retrieval/tool.py` + tests
+
+`Retriever` holds an index + cached query_emb. `set_image(emb)` caches the
+embedding (encoder not wired yet — raw emb for now). `retrieve(k)` → list of
+case dicts with score. `run_retrieve(action, retriever) → Observation`.
 
 **Depends on:** Task 1
-**Accept:** Tree search works with both MockAgent (symbolic only, no image) and
-visual actions (with mocked image+vlm). All existing 245 tests still pass.
-Tests in `tests/test_dispatch.py`.
+**Files:** `src/retrieval/retriever.py`, `src/retrieval/tool.py`,
+  `tests/test_retrieve_tool.py`
+**Accept:**
+- `run_retrieve` with populated retriever → `ok=True`, `len(result) == k`.
+- `retriever=None` → `ok=False`.
+- `query_emb=None` (not set) → `ok=False`.
+- Empty index → `ok=False`.
+- `args={"k": 3}` honoured; default k=5 when omitted.
+- All tests pass: `pytest tests/test_retrieve_tool.py -v`
 
 ---
 
-## Task 3: LLaVA-Med Agent — `src/agent/llavamed.py`
+## Task 3: Wire into dispatch / search / pipeline
 
-Implement `LLaVAMedAgent` satisfying `Agent` Protocol. Model loading via factory
-`load_llavamed(path, quantize)`. Prompt construction from
-(query, facts, history, tools, reflection). Output parsing: JSON action list or
-`Answer[...]`. Malformed → empty list.
+Route `retrieve` in `dispatch.run_tool` (flat early-return before kind branch).
+Thread `retriever=None` through `search()` and `pipeline.run()`. No fact-folding
+for retrieve — result lands in history only. When retriever is None, retrieve
+degrades gracefully (`ok=False`).
 
-**Depends on:** Task 2 (unified dispatch), v4 core (Agent Protocol)
-**Accept:** With mocked VLM inference:
-- Prompt contains question + facts + tool list + history.
-- JSON output `[{"tool":"is_a",...}]` → list of Action.
-- `Answer[Yes]` → list with string.
-- Malformed → empty list.
-- Tests in `tests/test_llavamed_agent.py`.
-
----
-
-## Task 4: End-to-end pipeline — `src/pipeline.py`
-
-Tie everything: `run(image_path, question, dag, detector, agent)` → SearchResult.
-Loads image, runs detector, parses question, sets image on agent, calls search.
-
-**Depends on:** Task 2, Task 3
-**Accept:** With MockAgent + oracle detector (existing `src/perception/oracle.py`) →
-end-to-end returns SearchResult with tier + path. Test in `tests/test_pipeline.py`.
+**Depends on:** Task 2
+**Files:** `src/tools/dispatch.py`, `src/tools/symbolic.py`,
+  `src/search/tree_search.py`, `src/pipeline.py`
+**Accept:**
+- `retrieve` action dispatched correctly through search → tool → Observation.
+- `retriever=None` → graceful `ok=False` (no crash).
+- No `state_facts` changes from retrieve (advisory only).
+- **Full existing test suite stays green:** `pytest tests/ -v`
 
 ---
 
-## Task 5: GPU integration tests (write but skip)
+## Task 4: Faithfulness guard tests
 
-Write `tests/test_integration_gpu.py` with `@pytest.mark.gpu`. Tests load real
-LLaVA-Med + real YOLO, run on a sample image, verify SearchResult. These tests
-are **skipped** without GPU (the user runs them on their server).
+The load-bearing guarantee: retrieve is inert to Tier-A. Tests use MockAgent +
+existing DAG fixtures.
 
-**Depends on:** Task 3, Task 4
-**Accept:** Tests exist, are properly marked, and are skipped in normal pytest run.
+**Depends on:** Task 3
+**Files:** `tests/test_retrieve_faithfulness.py`
+**Accept:**
+- `closure_progress` identical with/without a retrieve step in history.
+- Deletion test: remove retrieve from a Tier-A trace → answer unchanged;
+  remove the `is_a` witness → answer flips.
+- A node whose only action is `retrieve` never verifies to Tier-A.
+- All tests pass: `pytest tests/test_retrieve_faithfulness.py -v`
+
+---
+
+## Task 5: Encoder + build script + GPU integration
+
+BiomedCLIP encoder (`src/retrieval/encoder.py`), corpus build script
+(`scripts/build_rag_index.py`), and GPU integration test extension.
+Lazy imports for torch/open_clip. Build script reads `vqa.json`, filters
+to train-split images, encodes, saves FAISS index + cases.jsonl.
+
+**Depends on:** Tasks 1–4
+**Files:** `src/retrieval/encoder.py`, `scripts/build_rag_index.py`,
+  `tests/test_integration_gpu.py`
+**Accept:**
+- `load_encoder()` returns object with `.encode(image) → np.ndarray(512,)`.
+- Build script produces `vindr_index.faiss` + `vindr_cases.jsonl` from train split.
+- GPU integration test: real encoder + real index → pipeline returns SearchResult
+  with non-empty retrieve observations.
+- Tests marked `@pytest.mark.gpu`, skipped without GPU.
+- **Full suite still green:** `pytest tests/ -v`
