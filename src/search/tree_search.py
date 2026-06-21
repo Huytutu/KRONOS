@@ -7,13 +7,15 @@ the verifier scores each node (closure-progress). Best-first expansion with
 implicit backtracking via the frontier.
 """
 from src.contracts import Action, Observation, TreeNode, SearchResult, Query, PerceptualFact
-from src.tools.symbolic import run_tool
+from src.tools.dispatch import run_tool
+from src.tools.visual import fold_facts
 from src.engine.verifier import closure_progress, verify
 
 DEFAULT_IMG_WH = (2304, 2880)
 
 
-def search(query, facts, dag, agent, budget=20, k=3, img_wh=None):
+def search(query, facts, dag, agent, budget=20, k=3, img_wh=None,
+           image=None, detector_fn=None, vlm_fn=None):
     if img_wh is None:
         img_wh = DEFAULT_IMG_WH
 
@@ -44,9 +46,24 @@ def search(query, facts, dag, agent, budget=20, k=3, img_wh=None):
                     best_tier_b = result
                 continue
 
-            obs = run_tool(proposal, node.state_facts, dag, img_wh)
+            obs = run_tool(proposal, node.state_facts, dag, img_wh,
+                          image=image, detector_fn=detector_fn, vlm_fn=vlm_fn)
             new_history = list(node.history) + [(proposal, obs)]
             new_facts = list(node.state_facts)
+
+            if proposal.kind == "visual" and obs.ok and obs.result:
+                if proposal.tool == "re_detect" and isinstance(obs.result, list):
+                    new_facts = fold_facts(new_facts, obs.result)
+                elif proposal.tool == "inspect" and isinstance(obs.result, dict):
+                    from src.contracts import PerceptualFact as PF
+                    bbox = tuple(proposal.args.get("bbox", (0, 0, 0, 0)))
+                    new_fact = PF(
+                        concept=obs.result.get("concept", "unknown"),
+                        bbox=bbox,
+                        laterality="midline",
+                        conf=obs.result.get("conf", 0.5),
+                    )
+                    new_facts = fold_facts(new_facts, [new_fact])
 
             child = TreeNode(
                 state_facts=new_facts,
