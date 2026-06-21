@@ -34,7 +34,4 @@ def run_tool(action, facts, dag, img_wh):
             return Observation(result=lst, ok=True)
         return Observation(result=None, ok=False)
 
-    if tool == "retrieve":
-        return Observation(result=None, ok=False)
-
     return Observation(result=None, ok=False)

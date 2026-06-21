@@ -14,16 +14,18 @@ VINDR_FINDINGS = [
 _parser = QuestionParser(finding_vocab=VINDR_FINDINGS)
 
 
-def run_with_facts(question, facts, dag, agent=None, budget=20, k=3, img_wh=None):
+def run_with_facts(question, facts, dag, agent=None, budget=20, k=3, img_wh=None,
+                   retriever=None):
     """Run pipeline with pre-computed facts (no detector needed)."""
     if agent is None:
         agent = MockAgent()
 
     query = _parser.parse(question)
-    return search(query, facts, dag, agent, budget=budget, k=k, img_wh=img_wh)
+    return search(query, facts, dag, agent, budget=budget, k=k, img_wh=img_wh,
+                  retriever=retriever)
 
 
-def run(image_path, question, dag, detector, agent, budget=20, k=3):
+def run(image_path, question, dag, detector, agent, budget=20, k=3, retriever=None):
     """Full end-to-end: load image → detect → parse → search → result.
 
     Requires detector (YOLO) and agent (LLaVA-Med or Mock).
@@ -50,4 +52,5 @@ def run(image_path, question, dag, detector, agent, budget=20, k=3):
     return search(
         query, facts, dag, agent, budget=budget, k=k,
         img_wh=img_wh, image=image, detector_fn=detector_fn, vlm_fn=vlm_fn,
+        retriever=retriever,
     )
