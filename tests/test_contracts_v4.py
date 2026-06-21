@@ -76,6 +76,7 @@ def test_qtype_open():
     assert q.type == "open"
 
 
-def test_candidate_still_exists_for_backwards_compat():
-    """Candidate kept temporarily for perc.py; will be removed when perc.py is retired."""
-    from src.contracts import Candidate  # noqa: F401
+def test_candidate_removed():
+    """Candidate was a v2 multi-head type; v4 has one agent, so it is gone."""
+    with pytest.raises(ImportError):
+        from src.contracts import Candidate  # noqa: F401

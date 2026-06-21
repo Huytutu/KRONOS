@@ -99,16 +99,3 @@ class SearchResult(BaseModel):
 
     class Config:
         frozen = True
-
-
-# --- v2 backwards compat (used by proposers/perc.py, will be retired) ---
-
-class Candidate(BaseModel):
-    """A proposed answer from one proposer head. (v2, kept for perc.py)"""
-    answer: str = Field(...)
-    anchor: List[Any] = Field(default_factory=list)
-    head_id: Literal["E_perc", "E_sym", "E_rag"] = Field(...)
-    conf: float = Field(..., ge=0.0, le=1.0)
-
-    class Config:
-        frozen = True

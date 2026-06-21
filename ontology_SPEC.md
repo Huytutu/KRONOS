@@ -1,6 +1,6 @@
 # SPEC — Ontology DAG (`src/ontology/dag.py`)
 
-> References: [README §5.1-§5.3](docs/README.md), [IMPLEMENTATION §5.1](docs/IMPLEMENTATION.md)
+> References: [project.tex §Bước 4](docs/project.tex) (v4 design, ontology DAG section)
 
 ---
 
@@ -122,7 +122,7 @@ expand with clinician input.
 
 File: `src/ontology/dag.py`
 
-Method names follow IMPLEMENTATION.md §5.1 (authoritative). Each maps to one of
+Method names below are authoritative. Each maps to one of
 the four reasoning roles the engine uses (README §5.2 / project.tex §Bước 4).
 
 ```python

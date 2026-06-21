@@ -8,8 +8,8 @@
 > (`inspect`/`re_detect`/`compare`), EvaX swap. Perception stays **YOLO** for now.
 >
 > References: [intent](docs/intent/kronos-v4-multimodal-tree-search.md),
-> [ontology_SPEC.md](ontology_SPEC.md) (DAG, already built),
-> supersedes the propose-then-verify framing in [SPEC.md](SPEC.md).
+> [ontology_SPEC.md](ontology_SPEC.md) (DAG, already built).
+> Supersedes the v2 propose-then-verify design (engine spec removed).
 
 ---
 
