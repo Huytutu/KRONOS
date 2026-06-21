@@ -122,3 +122,63 @@ def test_re_detect_on_real_image(dag):
     obs = run_re_detect(action, image, detector_fn=detector_fn)
     # May or may not find something — just shouldn't crash
     assert isinstance(obs.ok, bool)
+
+
+# --- RAG / retrieve integration ---
+
+@pytest.mark.gpu
+@skip_no_gpu
+def test_encoder_loads_and_encodes():
+    """BiomedCLIP encoder loads and produces 512-d normalised embeddings."""
+    import numpy as np
+    from PIL import Image
+
+    test_image = os.environ.get("TEST_IMAGE")
+    if not test_image:
+        pytest.skip("TEST_IMAGE not set")
+
+    from src.retrieval.encoder import load_encoder
+    encoder = load_encoder(device="cuda")
+    image = Image.open(test_image).convert("RGB")
+    emb = encoder.encode(image)
+
+    assert emb.shape == (512,)
+    assert abs(np.linalg.norm(emb) - 1.0) < 1e-5
+
+
+@pytest.mark.gpu
+@skip_no_gpu
+def test_retrieve_with_real_encoder(dag):
+    """Full retrieve path: real encoder → brute-force index → Observation."""
+    import numpy as np
+    from PIL import Image
+
+    test_image = os.environ.get("TEST_IMAGE")
+    if not test_image:
+        pytest.skip("TEST_IMAGE not set")
+
+    from src.retrieval.encoder import load_encoder
+    from src.retrieval.index import BruteForceIndex
+    from src.retrieval.retriever import Retriever
+    from src.contracts import Action
+    from src.retrieval.tool import run_retrieve
+
+    encoder = load_encoder(device="cuda")
+    image = Image.open(test_image).convert("RGB")
+    emb = encoder.encode(image)
+
+    cases = [{"case_id": f"case_{i}", "labels": ["test"], "report": "test"} for i in range(5)]
+    fake_embs = np.random.RandomState(42).randn(5, 512).astype(np.float32)
+    fake_embs = fake_embs / np.linalg.norm(fake_embs, axis=1, keepdims=True)
+    fake_embs[0] = emb
+
+    index = BruteForceIndex(fake_embs, cases)
+    retriever = Retriever(index, encoder=encoder)
+    retriever.set_query_emb(emb)
+
+    action = Action(tool="retrieve", args={"k": 3})
+    obs = run_retrieve(action, retriever)
+
+    assert obs.ok is True
+    assert len(obs.result) == 3
+    assert obs.result[0]["case_id"] == "case_0"

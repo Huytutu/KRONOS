@@ -7,3 +7,4 @@ weights/
 *.log
 data/vindr_cxr_vqa/test/
 data/vindr_cxr_vqa/train/
+data/rag/
