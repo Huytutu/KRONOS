@@ -1,7 +1,15 @@
 from pydantic import BaseModel, Field
 from typing import Tuple, Literal, Optional, Dict, List, Any
 
-QType = Literal["existential", "negation", "relational", "counting"]
+QType = Literal["existential", "negation", "relational", "counting", "open"]
+
+Tier = Literal["A", "B", "ABSTAIN"]
+
+ToolName = Literal[
+    "is_a", "disjoint", "anatomy_of", "compose_laterality",
+    "get_exclusion_list", "retrieve",
+    "inspect", "re_detect", "compare",
+]
 
 class PerceptualFact(BaseModel):
     """Pydantic model representing a grounded perceptual fact extracted from a chest X-ray."""
@@ -53,8 +61,50 @@ class Query(BaseModel):
         frozen = True
 
 
+class Action(BaseModel):
+    """One step the agent takes — symbolic (graph op) or visual (image op)."""
+    tool: ToolName
+    args: Dict[str, Any] = Field(default_factory=dict)
+    kind: Literal["symbolic", "visual"] = "symbolic"
+
+    class Config:
+        frozen = True
+
+
+class Observation(BaseModel):
+    """Result returned by a tool after executing an Action."""
+    result: Any = None
+    ok: bool = True
+
+    class Config:
+        frozen = True
+
+
+class TreeNode(BaseModel):
+    """One node in the search tree — a reasoning state."""
+    state_facts: List[PerceptualFact] = Field(default_factory=list)
+    history: List[Tuple[Action, Observation]] = Field(default_factory=list)
+    answer: Optional[str] = None
+    reward: float = 0.0
+    parent_id: Optional[int] = None
+    reflection: str = ""
+
+
+class SearchResult(BaseModel):
+    """Output of tree search — answer + tier + the winning path (trace)."""
+    answer: str = ""
+    tier: Tier = "ABSTAIN"
+    path: List[Tuple[Action, Observation]] = Field(default_factory=list)
+    conf: float = 0.0
+
+    class Config:
+        frozen = True
+
+
+# --- v2 backwards compat (used by proposers/perc.py, will be retired) ---
+
 class Candidate(BaseModel):
-    """A proposed answer from one proposer head."""
+    """A proposed answer from one proposer head. (v2, kept for perc.py)"""
     answer: str = Field(...)
     anchor: List[Any] = Field(default_factory=list)
     head_id: Literal["E_perc", "E_sym", "E_rag"] = Field(...)
