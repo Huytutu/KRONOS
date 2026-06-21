@@ -1,0 +1,21 @@
+# Normalized anatomy zones for standard PA chest X-ray.
+# Coordinates: (x1, y1, x2, y2) in [0, 1] range.
+# CXR convention: patient's left = image right (standard PA view).
+#
+# These are approximate zones for IoU-based anatomy mapping.
+# The engine uses them to answer "Where is X?" questions.
+
+right_lung:
+  bbox: [0.05, 0.10, 0.45, 0.85]
+
+left_lung:
+  bbox: [0.55, 0.10, 0.95, 0.85]
+
+mediastinum:
+  bbox: [0.35, 0.05, 0.65, 0.90]
+
+heart:
+  bbox: [0.30, 0.40, 0.70, 0.80]
+
+pleural_space:
+  bbox: [0.03, 0.10, 0.97, 0.90]

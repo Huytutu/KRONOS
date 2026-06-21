@@ -1,0 +1,148 @@
+# Synonym dictionary for 14 VinDr-CXR findings.
+# Source: BioPortal API (RADLEX + MESH + SNOMEDCT) + hand-curated for CXR relevance.
+# Script: scripts/build_synonyms.py fetches raw data; this file is the curated result.
+# Used by ConceptLinker to map free-text finding names -> canonical DAG node.
+
+- canonical: Aortic enlargement
+  rid: RID34873
+  synonyms:
+    - aortic enlargement
+    - enlarged aorta
+    - aortic dilatation
+    - dilated aorta
+    - aortic ectasia
+
+- canonical: Atelectasis
+  rid: RID28493
+  synonyms:
+    - atelectasis
+    - lung collapse
+    - collapsed lung
+    - pulmonary collapse
+    - pulmonary atelectasis
+    - compression atelectasis
+    - round atelectasis
+    - rounded atelectasis
+    - resorption atelectasis
+    - helical atelectasis
+    - collapse of lung
+
+- canonical: Calcification
+  rid: RID5196
+  synonyms:
+    - calcification
+    - vascular calcification
+    - amorphous calcification
+    - punctate calcification
+    - calcification cluster
+
+- canonical: Cardiomegaly
+  rid: RID1392
+  synonyms:
+    - cardiomegaly
+    - enlarged heart
+    - heart enlargement
+    - cardiac enlargement
+    - cardiac hypertrophy
+    - heart hypertrophy
+    - hypertensive cardiomegaly
+    - hypertrophic cardiomegaly
+
+- canonical: Consolidation
+  rid: RID43255
+  synonyms:
+    - consolidation
+    - lung consolidation
+    - pulmonary consolidation
+    - airspace consolidation
+
+- canonical: ILD
+  rid: RID4864
+  synonyms:
+    - ild
+    - interstitial lung disease
+    - interstitial disease
+    - diffuse parenchymal lung disease
+    - progressive fibrosing interstitial lung disease
+
+- canonical: Infiltration
+  rid: RID28825
+  synonyms:
+    - infiltration
+    - infiltrate
+    - pulmonary infiltrate
+    - pulmonary infiltration
+    - lung infiltrate
+
+- canonical: Lung Opacity
+  rid: RID28530
+  synonyms:
+    - lung opacity
+    - opacity
+    - pulmonary opacity
+    - ground glass opacity
+    - ground-glass opacity
+    - ggo
+    - ground glass lung opacity
+
+- canonical: Nodule/Mass
+  rid: RID3875
+  synonyms:
+    - nodule/mass
+    - nodule
+    - mass
+    - lung nodule
+    - lung mass
+    - pulmonary nodule
+    - pulmonary mass
+    - solitary pulmonary nodule
+
+- canonical: Other lesion
+  synonyms:
+    - other lesion
+    - other abnormality
+    - other finding
+
+- canonical: Pleural effusion
+  rid: RID34539
+  synonyms:
+    - pleural effusion
+    - pleural effusions
+    - hydrothorax
+    - fluid in pleural space
+    - bilateral pleural effusion
+    - left pleural effusion
+    - right pleural effusion
+    - loculated pleural effusion
+    - exudative pleural effusion
+    - malignant pleural effusion
+
+- canonical: Pleural thickening
+  rid: RID34771
+  synonyms:
+    - pleural thickening
+    - thickened pleura
+    - thickening of pleura
+    - pleural cuirasse
+
+- canonical: Pneumothorax
+  rid: RID5352
+  synonyms:
+    - pneumothorax
+    - tension pneumothorax
+    - spontaneous pneumothorax
+    - primary spontaneous pneumothorax
+    - open pneumothorax
+    - air in pleural space
+    - pressure pneumothorax
+
+- canonical: Pulmonary fibrosis
+  rid: RID4737
+  synonyms:
+    - pulmonary fibrosis
+    - lung fibrosis
+    - fibrosing alveolitis
+    - idiopathic pulmonary fibrosis
+    - ipf
+    - diffuse interstitial pulmonary fibrosis
+    - cryptogenic fibrosing alveolitis

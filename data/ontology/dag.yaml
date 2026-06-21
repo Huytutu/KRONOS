@@ -1,0 +1,308 @@
+# Ontology DAG for KRONOS — VinDr-CXR pilot.
+# Hand-curated, version-controlled. is-a skeleton from RadLex.
+# Finding-to-anatomy associations derived from VinDr train.csv bbox analysis.
+#
+# Node count: ~33 nodes. Relation types: is-a, part-of, located-in, disjoint-with.
+
+nodes:
+  # --- Root ---
+  - id: abnormality
+    name: Abnormality
+
+  # --- Abstraction layer 1 (organ system) ---
+  - id: cardiac_abnormality
+    name: Cardiac abnormality
+
+  - id: pulmonary_abnormality
+    name: Pulmonary abnormality
+
+  - id: pleural_abnormality
+    name: Pleural abnormality
+
+  - id: vascular_abnormality
+    name: Vascular abnormality
+
+  # --- Abstraction layer 2 (clinical subgroups) ---
+  - id: airspace_abnormality
+    name: Airspace abnormality
+
+  - id: interstitial_abnormality
+    name: Interstitial abnormality
+
+  # --- 14 VinDr finding leaves ---
+  - id: aortic_enlargement
+    name: Aortic enlargement
+    rid: RID34873
+
+  - id: atelectasis
+    name: Atelectasis
+    rid: RID28493
+
+  - id: calcification
+    name: Calcification
+    rid: RID5196
+
+  - id: cardiomegaly
+    name: Cardiomegaly
+    rid: RID1392
+
+  - id: consolidation
+    name: Consolidation
+    rid: RID43255
+
+  - id: ild
+    name: ILD
+    rid: RID4864
+
+  - id: infiltration
+    name: Infiltration
+    rid: RID28825
+
+  - id: lung_opacity
+    name: Lung Opacity
+    rid: RID28530
+
+  - id: nodule_mass
+    name: Nodule/Mass
+    rid: RID3875
+
+  - id: other_lesion
+    name: Other lesion
+
+  - id: pleural_effusion
+    name: Pleural effusion
+    rid: RID34539
+
+  - id: pleural_thickening
+    name: Pleural thickening
+    rid: RID34771
+
+  - id: pneumothorax
+    name: Pneumothorax
+    rid: RID5352
+
+  - id: pulmonary_fibrosis
+    name: Pulmonary fibrosis
+    rid: RID4737
+
+  # --- Anatomy nodes ---
+  - id: chest
+    name: Chest
+    type: anatomy
+
+  - id: lung
+    name: Lung
+    type: anatomy
+
+  - id: left_lung
+    name: Left lung
+    type: anatomy
+
+  - id: right_lung
+    name: Right lung
+    type: anatomy
+
+  - id: mediastinum
+    name: Mediastinum
+    type: anatomy
+
+  - id: pleural_space
+    name: Pleural space
+    type: anatomy
+
+  - id: heart
+    name: Heart
+    type: anatomy
+
+edges:
+  # ====================================================================
+  # is-a: finding -> subgroup -> organ system -> root
+  # ====================================================================
+
+  # cardiac branch
+  - relation: is-a
+    source: cardiomegaly
+    target: cardiac_abnormality
+
+  - relation: is-a
+    source: cardiac_abnormality
+    target: abnormality
+
+  # pulmonary branch — two subgroups
+  - relation: is-a
+    source: airspace_abnormality
+    target: pulmonary_abnormality
+
+  - relation: is-a
+    source: interstitial_abnormality
+    target: pulmonary_abnormality
+
+  - relation: is-a
+    source: pulmonary_abnormality
+    target: abnormality
+
+  # airspace subgroup: consolidation, infiltration, lung_opacity, atelectasis
+  - relation: is-a
+    source: consolidation
+    target: airspace_abnormality
+
+  - relation: is-a
+    source: infiltration
+    target: airspace_abnormality
+
+  - relation: is-a
+    source: lung_opacity
+    target: airspace_abnormality
+
+  - relation: is-a
+    source: atelectasis
+    target: airspace_abnormality
+
+  # interstitial subgroup: ILD, pulmonary fibrosis
+  - relation: is-a
+    source: ild
+    target: interstitial_abnormality
+
+  - relation: is-a
+    source: pulmonary_fibrosis
+    target: interstitial_abnormality
+
+  # nodule/mass — directly under pulmonary
+  - relation: is-a
+    source: nodule_mass
+    target: pulmonary_abnormality
+
+  # pleural branch
+  - relation: is-a
+    source: pleural_effusion
+    target: pleural_abnormality
+
+  - relation: is-a
+    source: pleural_thickening
+    target: pleural_abnormality
+
+  - relation: is-a
+    source: pneumothorax
+    target: pleural_abnormality
+
+  - relation: is-a
+    source: pleural_abnormality
+    target: abnormality
+
+  # vascular branch
+  - relation: is-a
+    source: aortic_enlargement
+    target: vascular_abnormality
+
+  - relation: is-a
+    source: vascular_abnormality
+    target: abnormality
+
+  # misc (no clear organ-system parent)
+  - relation: is-a
+    source: calcification
+    target: abnormality
+
+  - relation: is-a
+    source: other_lesion
+    target: abnormality
+
+  # ====================================================================
+  # part-of: anatomy containment
+  # ====================================================================
+  - relation: part-of
+    source: lung
+    target: chest
+
+  - relation: part-of
+    source: left_lung
+    target: lung
+
+  - relation: part-of
+    source: right_lung
+    target: lung
+
+  - relation: part-of
+    source: mediastinum
+    target: chest
+
+  - relation: part-of
+    source: pleural_space
+    target: chest
+
+  - relation: part-of
+    source: heart
+    target: mediastinum
+
+  # ====================================================================
+  # located-in: finding -> typical anatomy (from VinDr bbox analysis)
+  # Derived from 36,096 annotated boxes in train.csv.
+  # ====================================================================
+
+  # Cardiomegaly: 74% midline — located in heart/mediastinum
+  - relation: located-in
+    source: cardiomegaly
+    target: heart
+
+  # Aortic enlargement: 84% midline — located in mediastinum
+  - relation: located-in
+    source: aortic_enlargement
+    target: mediastinum
+
+  # Pulmonary findings: bilateral — located in lung
+  - relation: located-in
+    source: consolidation
+    target: lung
+
+  - relation: located-in
+    source: infiltration
+    target: lung
+
+  - relation: located-in
+    source: lung_opacity
+    target: lung
+
+  - relation: located-in
+    source: atelectasis
+    target: lung
+
+  - relation: located-in
+    source: ild
+    target: lung
+
+  - relation: located-in
+    source: pulmonary_fibrosis
+    target: lung
+
+  - relation: located-in
+    source: nodule_mass
+    target: lung
+
+  # Pleural findings: in pleural space
+  - relation: located-in
+    source: pleural_effusion
+    target: pleural_space
+
+  - relation: located-in
+    source: pleural_thickening
+    target: pleural_space
+
+  - relation: located-in
+    source: pneumothorax
+    target: pleural_space
+
+  # Calcification: can appear anywhere (lung, mediastinum, etc.)
+  - relation: located-in
+    source: calcification
+    target: chest
+
+  # ====================================================================
+  # disjoint-with: mutual exclusion on the SAME REGION (not image-level)
+  # ====================================================================
+  # NOTE: pneumothorax and pleural effusion co-occur in 60/15000 VinDr
+  # images, but on DIFFERENT sides. They are disjoint on the same
+  # pleural space — the engine must check region overlap, not just
+  # finding existence.
+  - relation: disjoint-with
+    source: pneumothorax
+    target: pleural_effusion

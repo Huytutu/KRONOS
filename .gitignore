@@ -1,0 +1,9 @@
+# Ignore
+__pycache__/
+*.pyc
+.env
+weights/
+.pytest_cache/
+*.log
+data/vindr_cxr_vqa/test/
+data/vindr_cxr_vqa/train/

@@ -1,0 +1,68 @@
+# Closed-world exclusion lists for negation questions.
+# Engine checks EVERY item before concluding absence.
+# Missing entry -> engine returns UNVERIFIABLE (abstains).
+#
+# Built from VinDr train.csv co-occurrence analysis + clinical groupings.
+# For each finding: self + subtypes + same-group siblings that could
+# be confused or substituted.
+
+# --- Cardiac ---
+Cardiomegaly:
+  - cardiomegaly
+
+# --- Pulmonary: airspace subgroup ---
+# These four are clinically overlapping (same region, similar appearance)
+Consolidation:
+  - consolidation
+  - infiltration
+  - lung_opacity
+
+Infiltration:
+  - infiltration
+  - consolidation
+  - lung_opacity
+
+Lung Opacity:
+  - lung_opacity
+  - consolidation
+  - infiltration
+
+Atelectasis:
+  - atelectasis
+
+# --- Pulmonary: interstitial subgroup ---
+# ILD and pulmonary fibrosis are related (fibrosis is end-stage ILD)
+ILD:
+  - ild
+  - pulmonary_fibrosis
+
+Pulmonary fibrosis:
+  - pulmonary_fibrosis
+  - ild
+
+# --- Pulmonary: mass-like ---
+Nodule/Mass:
+  - nodule_mass
+
+# --- Pleural ---
+# Effusion and pneumothorax co-occur in 60 images (different sides)
+# but are distinct findings — each has its own exclusion list
+Pleural effusion:
+  - pleural_effusion
+
+Pleural thickening:
+  - pleural_thickening
+
+Pneumothorax:
+  - pneumothorax
+
+# --- Vascular ---
+Aortic enlargement:
+  - aortic_enlargement
+
+# --- Other ---
+Calcification:
+  - calcification
+
+Other lesion:
+  - other_lesion

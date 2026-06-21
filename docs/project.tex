@@ -1,0 +1,1077 @@
+% ============================================================================
+%  KRONOS — Proposal Vòng 1: Nộp ý tưởng
+%  Knowledge-Routed Neuro-Symbolic Multimodal Reasoning
+%  for Faithful Chest X-ray VQA
+% ============================================================================
+\documentclass[11pt,a4paper]{article}
+
+% --- Packages ---------------------------------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[vietnamese]{babel}
+\usepackage[top=2.2cm,bottom=2.2cm,left=2.5cm,right=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{amsmath,amssymb}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric,arrows.meta,positioning,fit,backgrounds,calc}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{tcolorbox}
+\usepackage{multicol}
+\usepackage{caption}
+\usepackage{longtable}
+
+% --- Colors -----------------------------------------------------------------
+\definecolor{kronblue}{HTML}{1A5276}
+\definecolor{kronaccent}{HTML}{2E86C1}
+\definecolor{kronlight}{HTML}{EBF5FB}
+\definecolor{krondark}{HTML}{0B2F47}
+\definecolor{krongreen}{HTML}{1E8449}
+\definecolor{kronorange}{HTML}{D4AC0D}
+\definecolor{kronred}{HTML}{C0392B}
+
+% --- Hyperref setup ---------------------------------------------------------
+\hypersetup{
+  colorlinks=true,
+  linkcolor=kronblue,
+  urlcolor=kronaccent,
+  citecolor=kronblue,
+  pdftitle={KRONOS — AI-Powered Faithful Medical VQA},
+  pdfauthor={Team KRONOS}
+}
+
+% --- Section formatting -----------------------------------------------------
+\titleformat{\section}{\Large\bfseries\color{kronblue}}{\thesection.}{0.5em}{}
+\titleformat{\subsection}{\large\bfseries\color{krondark}}{\thesubsection}{0.5em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\color{krondark}}{\thesubsubsection}{0.5em}{}
+
+% --- Header/Footer ----------------------------------------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{kronblue}{\textbf{KRONOS} — Faithful Medical VQA}}
+\fancyhead[R]{\small\textcolor{gray}{v4 — Verifier-Guided Multimodal Tree Search}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% --- Custom boxes -----------------------------------------------------------
+\newtcolorbox{highlightbox}{
+  colback=kronlight,
+  colframe=kronaccent,
+  boxrule=0.5pt,
+  arc=3pt,
+  left=8pt,right=8pt,top=6pt,bottom=6pt
+}
+
+\newtcolorbox{keyinsight}{
+  colback=white,
+  colframe=krongreen,
+  boxrule=1pt,
+  arc=3pt,
+  left=8pt,right=8pt,top=6pt,bottom=6pt,
+  title={\textbf{Điểm khác biệt cốt lõi}},
+  fonttitle=\color{white},
+  coltitle=white,
+  colbacktitle=krongreen
+}
+
+\newtcolorbox{examplebox}[1][]{
+  colback=gray!5,
+  colframe=gray!50,
+  boxrule=0.3pt,
+  arc=2pt,
+  left=6pt,right=6pt,top=6pt,bottom=6pt,
+  #1
+}
+
+% ============================================================================
+\begin{document}
+
+% --- Title page -------------------------------------------------------------
+\begin{titlepage}
+\begin{center}
+
+\vspace*{1.5cm}
+
+{\Huge\bfseries\textcolor{kronblue}{KRONOS}}\\[0.5cm]
+{\Large\textcolor{krondark}{Knowledge-Routed Neuro-Symbolic}}\\[0.2cm]
+{\Large\textcolor{krondark}{Multimodal Reasoning for}}\\[0.2cm]
+{\Large\textcolor{krondark}{Faithful Chest X-ray VQA}}\\[1.5cm]
+
+\begin{highlightbox}
+\centering
+\textit{Tác tử VLM tìm kiếm trên cây các hành động \textbf{thị giác + ký hiệu},\\
+dẫn bởi bộ xác minh tất định --- trả lời y khoa với bằng chứng \textbf{audit được} và \textbf{nhân quả}.}
+\end{highlightbox}
+
+\vspace{1.5cm}
+
+% --- Team info --------------------------------------------------------------
+\begin{tabular}{rl}
+\toprule
+\textbf{Tên dự án} & KRONOS — Faithful Medical VQA \\
+\midrule
+\textbf{Lĩnh vực}  & Y tế / Chẩn đoán hình ảnh AI \\
+\textbf{Đội thi}   & Team KRONOS \\
+\textbf{Thành viên} & \textit{[Nguyễn Gia Huy]} \\
+                    & \textit{[Vũ Mạnh Cường]} \\
+\textbf{Ngày nộp}   & \today \\
+\bottomrule
+\end{tabular}
+
+\vfill
+
+{\small\textcolor{gray}{Thiết kế v4 — Verifier-Guided Multimodal Tree Search}}
+
+\end{center}
+\end{titlepage}
+
+% --- Table of contents ------------------------------------------------------
+\tableofcontents
+\newpage
+
+% ============================================================================
+\section{Vấn đề cần giải quyết}
+% ============================================================================
+
+\subsection{Bối cảnh: Quá tải chẩn đoán hình ảnh y khoa}
+
+Tại Việt Nam, mỗi bác sĩ X-quang trung bình đọc \textbf{60--100 ca/ngày}. Trên toàn cầu, khối lượng chẩn đoán hình ảnh tăng \textbf{5--8\%/năm}, trong khi số lượng bác sĩ chẩn đoán hình ảnh tăng chưa đến 2\%/năm. Sai sót chẩn đoán chiếm \textbf{3--5\%} các ca X-quang ngực, và tỉ lệ này tăng đáng kể khi bác sĩ làm việc quá tải.
+
+Hệ thống AI hỗ trợ chẩn đoán hình ảnh --- cụ thể là Medical VQA (hỏi--đáp trực quan y khoa) --- cho phép bác sĩ đặt câu hỏi bằng ngôn ngữ tự nhiên về ảnh X-quang và nhận câu trả lời tự động, tiết kiệm thời gian và giảm tỉ lệ bỏ sót.
+
+\subsection{Điểm đau: ``Đúng câu trả lời, sai lý do''}
+
+\begin{highlightbox}
+Các hệ thống VQA y khoa hiện tại tối ưu hóa \textbf{độ chính xác câu trả lời} nhưng bỏ qua \textbf{tính trung thực của bằng chứng} --- tức là liệu câu trả lời có được đưa ra \emph{vì đúng lý do lâm sàng} hay không.
+\end{highlightbox}
+
+\textbf{Hậu quả thực tế:}
+\begin{itemize}[leftmargin=1.5em]
+  \item Mô hình có thể trả lời đúng bằng \textbf{lối tắt} (tương quan giả, thiên lệch dữ liệu) thay vì suy luận lâm sàng thực sự.
+  \item Bác sĩ không thể \textbf{kiểm chứng} lý do đằng sau câu trả lời $\to$ không tin tưởng $\to$ không sử dụng.
+  \item Khi mô hình sai, không có cách nào biết \textbf{tại sao sai} $\to$ không thể cải thiện có hệ thống.
+  \item Nghiên cứu gần đây cho thấy các chuỗi lý luận (chain-of-thought) của mô hình ngôn ngữ lớn thường là \textbf{giải thích hậu kỳ}, không phải bằng chứng thực sự gây ra câu trả lời.
+\end{itemize}
+
+\subsection{Vì sao cần AI --- và vì sao AI hiện tại chưa đủ}
+
+\begin{table}[H]
+\centering\small
+\begin{tabularx}{\textwidth}{>{\bfseries}l X X}
+\toprule
+& \textbf{Không có AI} & \textbf{AI hiện tại (dựa trên LLM)} \\
+\midrule
+Tốc độ    & 5--10 phút/ca & Dưới 5 giây/câu hỏi \\
+Bỏ sót    & 3--5\%        & Giảm khoảng 40\% \\
+Giải thích & Bác sĩ tự viết & Chuỗi lý luận (không kiểm chứng được) \\
+Tin cậy    & Cao (con người) & Thấp (``hộp đen'') \\
+\bottomrule
+\end{tabularx}
+\caption{So sánh quy trình chẩn đoán hiện tại}
+\end{table}
+
+\textbf{KRONOS giải quyết khoảng trống ở cột thứ ba:} AI trả lời nhanh \emph{và} kèm bằng chứng \textbf{truy vết được, kiểm chứng nhân quả}, nhờ tác tử VLM tìm kiếm trên cây hành động thị giác + ký hiệu, dẫn bởi bộ xác minh tất định.
+
+% ============================================================================
+\section{Giải pháp: KRONOS}
+% ============================================================================
+
+\subsection{Tầm nhìn sản phẩm}
+
+KRONOS là hệ thống VQA y khoa cho ảnh X-quang ngực, trong đó:
+\begin{enumerate}[leftmargin=1.5em]
+  \item Một \textbf{tác tử VLM} (LLaVA-Med 7B, đóng băng) trả lời câu hỏi bằng cách \textbf{tìm kiếm trên cây} (tree search) các hành động đan xen \textbf{thị giác} (nhìn/zoom/phát hiện lại vùng ảnh) và \textbf{ký hiệu} (truy vấn đồ thị tri thức). Suy luận là \emph{đa phương thức thật}: tác tử được nhìn lại ảnh trong quá trình suy luận.
+  \item Cây được dẫn bởi \textbf{bộ xác minh tất định} (verifier-as-value), không phải LLM tự chấm điểm. \textbf{Path root$\to$leaf thắng cuộc = trace bằng chứng} mà bác sĩ audit được.
+  \item Với câu hỏi trong tầm biểu đạt bản thể học (\textbf{Hạng A}), đáp án \textbf{bắt buộc là kết quả tất định} từ path, vượt cổng xác minh + kiểm tra xóa (nhân quả). Hạng B (câu mở) được phục vụ nhưng gắn cờ \& báo cáo riêng.
+  \item Hành động \texttt{re\_detect} cho phép tác tử \textbf{nhìn lại vùng ảnh} để bắt phát hiện mà lần quét toàn cục bỏ sót --- reasoning \emph{vá được lỗi perception}, kéo cả accuracy.
+  \item Khi cây cạn mà không nhánh nào qua xác minh $\to$ hệ thống \textbf{từ chối} thay vì đoán.
+\end{enumerate}
+
+\begin{keyinsight}
+\textbf{KRONOS = ``Verifier-guided multimodal tree search''.} Tác tử VLM tìm kiếm trên cây các hành động thị giác + ký hiệu; \textbf{reward = tiến-độ-tới-path-xác-minh-được} từ bộ xác minh tất định (không phải LLM tự khen). Nhánh thắng \emph{tự khắc} faithful vì được chọn bởi verifier, và trace gồm cả bước thị giác (cite vùng bác sĩ kiểm được) lẫn ký hiệu (sound trên đồ thị). \texttt{re\_detect} biến reasoning thành cơ chế \emph{vá perception} --- cái mà suy luận thuần ký hiệu không làm được.
+\end{keyinsight}
+
+\subsection{Sáu nguyên lý thiết kế}
+
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Suy luận đa phương thức thật.} Tác tử đan xen hành động \emph{thị giác} (nhìn/zoom/phát hiện lại vùng ảnh) với hành động \emph{ký hiệu} (truy vấn đồ thị). Reasoning chạm pixel ở từng bước --- không chỉ dùng nhãn đầu vào.
+  \item \textbf{Verifier dẫn đường, không phải LLM tự chấm.} Reward của cây tìm kiếm = tiến-độ-tới-path-xác-minh-được (closure-progress) từ bộ xác minh tất định. Nhánh thắng tự khắc faithful vì được verifier chọn. LLM self-eval chỉ làm heuristic xếp thứ tự khám phá.
+  \item \textbf{Cây thay tuyến tính: backtracking bù cho planner yếu.} VLM 7B đóng băng thường chọn sai bước đầu; cây cho phép thử nhiều nhánh và phục hồi, thay vì bỏ cuộc (abstain) như ReAct tuyến tính.
+  \item \textbf{Nhận thức nền tách rời + thị giác bổ sung.} EvaX quét toàn ảnh \emph{trước câu hỏi} (giữ closed-world cho phủ định). Hành động thị giác chỉ \emph{thêm/tinh chỉnh}, không thay nền --- \texttt{re\_detect} vá lỗi bỏ sót mà không phá phủ định.
+  \item \textbf{Cổng xác minh + phân hạng, từ chối có nguyên tắc.} Hạng A: ký hiệu = verify-gate sound; thị giác = evidence-traceable + deletion-test. Hạng B (câu mở): gắn cờ, báo cáo riêng. Cây cạn mà không nhánh nào qua $\to$ từ chối.
+  \item \textbf{Đóng băng hoàn toàn, tái lập, chi phí thấp.} Không huấn luyện: VLM + detector đóng băng; engine + verifier chạy CPU. Với giải mã tham lam, pipeline tái lập.
+\end{enumerate}
+
+\subsection{Cơ sở nghiên cứu --- tại sao cách tiếp cận này}
+
+Mỗi quyết định thiết kế của KRONOS đều được thúc đẩy bởi một \textbf{vấn đề đã được ghi nhận} trong tài liệu nghiên cứu gần đây. Phần này trình bày logic ``vấn đề $\to$ bằng chứng $\to$ giải pháp KRONOS'' cho từng quyết định.
+
+\subsubsection{Vấn đề 1: Chuỗi lý luận của LLM không trung thực}
+
+\textbf{Bằng chứng:} Turpin et al.\ (2024) và Anthropic (2025) chỉ ra rằng chuỗi lý luận (chain-of-thought) của mô hình ngôn ngữ lớn thường là \emph{giải thích hậu kỳ} --- mô hình đưa ra đáp án trước, rồi bịa chuỗi lý luận nghe hợp lý sau. Nghiên cứu ``Chain-of-Thought Reasoning In The Wild Is Not Always Faithful'' (Arcuschin et al., 2025, \textit{ICML}) đo được tỉ lệ hợp lý hóa hậu kỳ ngầm lên tới 13\% ở GPT-4o-mini. Trong y khoa, Huang et al.\ (2025) cho thấy khi nhiễu loạn hình ảnh đầu vào, các mô hình thị giác--ngôn ngữ y khoa vẫn giữ nguyên lời giải thích --- bằng chứng rõ ràng rằng giải thích \emph{không phản ánh} quá trình ra quyết định.
+
+\textbf{Giải pháp KRONOS:} Không dùng LLM để sinh chuỗi lý luận. Thay vào đó, chuỗi suy luận là \emph{sản phẩm phụ} của quá trình duyệt đồ thị tất định trong engine. Tính trung thực được đảm bảo \textbf{theo cấu trúc}: nếu xóa bất kỳ cạnh nào trong chuỗi suy luận, đáp án thay đổi (kiểm tra xóa). Không cần ``tin'' vào mô hình --- chỉ cần kiểm tra đồ thị.
+
+\subsubsection{Vấn đề 2: Tri thức đồ thị được dùng để dạy, không phải để suy luận}
+
+\textbf{Bằng chứng:} MedReason (Wang et al., 2025, \textit{arXiv:2504.00993}) là công trình gần nhất: dùng đồ thị tri thức PrimeKG để tạo ``đường suy luận'' (thinking paths), rồi dùng chúng làm dữ liệu huấn luyện để tinh chỉnh LLM (MedReason-8B). Kết quả ấn tượng về chính xác, nhưng \textbf{lúc suy luận thực tế, đồ thị tri thức không còn ở đó} --- LLM tinh chỉnh tự sinh reasoning, và không có gì đảm bảo nó trung thực với đồ thị gốc.
+
+\textbf{Giải pháp KRONOS:} Đưa đồ thị tri thức \textbf{vào thẳng lúc suy luận}. Engine duyệt DAG trực tiếp tại inference --- không phải dùng DAG để dạy rồi bỏ đi. Sự khác biệt: ``KG-at-training'' (MedReason) vs ``KG-at-inference'' (KRONOS).
+
+\subsubsection{Vấn đề 3: Câu hỏi phủ định cần thế giới đóng}
+
+\textbf{Bằng chứng:} Giả định thế giới đóng (Closed-World Assumption, Reiter 1978) là nguyên lý chuẩn trong cơ sở dữ liệu và logic: ``cái không được biết là đúng thì được coi là sai''. Trong VQA y khoa, câu hỏi ``Phổi có sạch không?'' đòi hỏi phải \emph{chứng minh} không có bất thường nào --- nhưng LLM không có danh sách đầy đủ các bất thường cần loại trừ, nên thường trả lời sai hoặc đoán.
+
+\textbf{Giải pháp KRONOS:} Biên soạn thủ công \textbf{danh sách loại trừ} cho mỗi phát hiện (ví dụ: ``để kết luận phổi sạch, phải loại trừ {đông đặc, mờ kính, nốt phổi, xẹp phổi, ...}''). Engine kiểm tra từng mục trong danh sách. Nếu danh sách chưa đầy đủ $\to$ từ chối thay vì đoán.
+
+\subsubsection{Vấn đề 4: Suy luận tuyến tính gãy ở bước đầu --- cần cây + hành động đa phương thức có kiểm chứng}
+
+\textbf{Bằng chứng:} ReAct (Yao et al., 2023) cho LLM xen kẽ suy luận và hành động, nhưng là tuyến tính: sai bước đầu thì mất cả chuỗi. LATS (Zhou et al., 2024) giải quyết bằng \textbf{cây tìm kiếm + backtracking}, nhưng dùng LLM tự chấm điểm (value function) --- không kiểm chứng được, phá faithfulness. Các visual-MCTS gần đây (Mulberry, AR-MCTS) mở rộng sang thị giác nhưng reward vẫn là LLM hoặc reward model học. Trong xác minh hình thức, generate-then-verify tách người đề xuất khỏi người xác minh tất định (VERGE, Li et al., 2025). Plan-on-Graph (Chen et al., 2024) neo tác tử vào đồ thị tri thức.
+
+\textbf{Giải pháp KRONOS:} Kết hợp ba ý tưởng: \textbf{(i)} cây tìm kiếm + backtracking từ LATS (bù cho VLM 7B chọn sai bước đầu); \textbf{(ii)} hành động đa phương thức --- \emph{thị giác} (\texttt{inspect}, \texttt{re\_detect}, \texttt{compare}) đan xen \emph{ký hiệu} (\texttt{is\_a}, \texttt{disjoint}\ldots); \textbf{(iii)} thay value function = LLM tự chấm bằng \textbf{verifier-as-value} (reward = tiến-độ-tới-path-xác-minh-được từ bộ xác minh tất định). Nhờ vậy nhánh thắng \emph{tự khắc} faithful; \texttt{re\_detect} cho phép reasoning \emph{nhìn lại ảnh} để vá lỗi perception --- cái mà suy luận thuần ký hiệu không làm được.
+
+\subsubsection{Vấn đề 5: Cần đánh giá phù hợp}
+
+\textbf{Bằng chứng:} GEMeX (Liu et al., ICCV 2025) là tập đánh giá VQA X-quang ngực lớn nhất hiện tại (1,6 triệu câu hỏi), với vùng bằng chứng do bác sĩ tinh chỉnh. Đánh giá trên GEMeX cho thấy các mô hình thị giác--ngôn ngữ lớn hiện tại (LLaVA-Med, BiomedCLIP) có hiệu suất \emph{dưới mức tối ưu} --- đặc biệt ở các câu hỏi đòi hỏi suy luận (không chỉ nhận diện).
+
+\textbf{Giải pháp KRONOS:} Dùng GEMeX làm tập mở rộng. Metric EF@k đo \emph{đồ thị con suy luận} (không phải attention map), và kiểm tra xóa đo \emph{tính nhân quả} --- hai chỉ số mà các hệ thống ``hộp đen'' không thể tính.
+
+% ============================================================================
+\section{Thiết kế tổng quan kiến trúc}
+% ============================================================================
+
+\subsection{Sơ đồ kiến trúc}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  node distance=0.8cm and 1.2cm,
+  every node/.style={font=\small},
+  block/.style={rectangle, draw=kronblue, fill=kronlight, rounded corners=3pt,
+                minimum width=3.4cm, minimum height=1cm, align=center,
+                text=krondark, line width=0.6pt},
+  vblock/.style={rectangle, draw=kronred!80, fill=kronred!8, rounded corners=3pt,
+                 minimum width=3.4cm, minimum height=1cm, align=center,
+                 text=krondark, line width=0.6pt},
+  engine/.style={rectangle, draw=kronaccent, fill=white, rounded corners=3pt,
+                 minimum width=3.5cm, minimum height=1cm, align=center,
+                 text=krondark, line width=1.2pt},
+  input/.style={rectangle, draw=gray, fill=gray!10, rounded corners=3pt,
+                minimum width=2.8cm, minimum height=0.8cm, align=center},
+  output/.style={rectangle, draw=krongreen, fill=krongreen!10, rounded corners=3pt,
+                 minimum width=4cm, minimum height=0.8cm, align=center,
+                 line width=1pt},
+  arrow/.style={-{Stealth[length=2.5mm]}, line width=0.5pt, kronblue},
+  loop/.style={-{Stealth[length=2.5mm]}, line width=0.8pt, kronorange},
+  label/.style={font=\scriptsize\itshape, text=gray}
+]
+
+% Inputs
+\node[input] (img) {Ảnh X-quang ngực};
+\node[input, right=3.5cm of img] (q) {Câu hỏi};
+
+% Perception (EvaX) -- query-independent, left column
+\node[block, below=0.8cm of img] (perc) {\textbf{EvaX (đóng băng)}\\quét toàn ảnh $\to$ findings nền};
+\node[block, below=0.8cm of perc] (linker) {\textbf{Liên kết + Dựng đồ thị}\\findings $\cup$ bản thể học};
+
+% Core box: Tree search agent + tools + verify gate
+\node[engine, below=1.8cm of linker, xshift=3cm,
+      minimum width=12cm, minimum height=5cm] (corebox) {};
+\node[anchor=north, font=\small\bfseries, text=kronaccent] at (corebox.north)
+  {CÂY TÌM KIẾM ĐA PHƯƠNG THỨC $\to$ VERIFIER DẪN ĐƯỜNG};
+
+% Agent
+\node[block, minimum width=3.8cm] at ($(corebox.center)+(-3.5,1.5)$) (agent)
+  {\textbf{Tác tử VLM (LLaVA-Med)}\\chọn nhánh + hành động};
+
+% Two tool groups
+\node[vblock, minimum width=3.6cm] at ($(corebox.center)+(2.8,2)$) (vtools)
+  {\textbf{Hành động thị giác}\\\scriptsize inspect $\cdot$ re\_detect $\cdot$ compare};
+\node[block, minimum width=3.6cm] at ($(corebox.center)+(2.8,0.5)$) (stools)
+  {\textbf{Hành động ký hiệu}\\\scriptsize is-a $\cdot$ loại trừ $\cdot$ giải phẫu\\\scriptsize $\cdot$ bên $\cdot$ thế-giới-đóng $\cdot$ truy xuất};
+
+% Tree icon (abstract)
+\node[font=\scriptsize, text=kronorange] at ($(corebox.center)+(-3.5,0)$)
+  {backtrack + reflection};
+
+% Verifier-as-value
+\node[engine, minimum width=5cm] at ($(corebox.center)+(0,-1.5)$) (verify)
+  {\textbf{Bộ xác minh (reward = closure-progress)}\\\scriptsize Hạng A: verify PASS \; | \; Hạng B: gắn cờ \; | \; Từ chối};
+
+% Loops
+\draw[loop] ([yshift=3pt]agent.east) -- node[above, font=\scriptsize, text=kronorange]{act} ([yshift=3pt]vtools.west);
+\draw[loop] ([yshift=-3pt]vtools.west) -- node[below, font=\scriptsize, text=kronorange]{obs} ([yshift=-3pt]agent.east);
+\draw[loop] (agent.east) -- (stools.west);
+\draw[loop, dashed, krongreen] (verify.west) -| node[left, font=\scriptsize, text=krongreen, pos=0.2]{reward} (agent.south);
+
+% Output
+\node[output, below=1.2cm of corebox, minimum width=9cm] (out)
+  {\textbf{Đáp án + Path thắng (trace) + Hạng + Tin cậy}};
+
+% Arrows
+\draw[arrow] (img) -- (perc);
+\draw[arrow] (perc) -- (linker);
+\draw[arrow] (linker) -- (linker |- corebox.north);
+\draw[arrow] (q) -- (q |- corebox.north);
+\draw[arrow] (verify.south) -- (verify.south |- out.north);
+
+% Image feed to visual tools
+\draw[arrow, dashed, kronred!60] (img.east) -| ([xshift=5.5cm]img.east) |- (vtools.east);
+\node[label, right=0.1cm of linker.east] {đồ thị bằng chứng nền};
+
+\end{tikzpicture}
+\caption{Kiến trúc KRONOS v4: EvaX quét nền $\to$ đồ thị bằng chứng $\to$ tác tử VLM tìm kiếm trên \textbf{cây} hành động thị giác (đỏ) + ký hiệu (xanh), dẫn bởi \textbf{verifier-as-value}. Ảnh được feed vào visual tools (nét đứt đỏ) để reasoning chạm pixel.}
+\label{fig:architecture}
+\end{figure}
+
+\subsection{Tổng quan luồng xử lý}
+
+Pipeline gồm năm giai đoạn. Phần~\ref{sec:methodology} mô tả chi tiết.
+
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Nhận thức nền (tách rời, độc lập câu hỏi):} EvaX (đóng băng) quét toàn ảnh $\to$ findings + bbox + conf + bên. Đây là evidence \emph{nền}, giữ closed-world cho phủ định.
+  \item \textbf{Dựng đồ thị bằng chứng:} LLaVA-Med liên kết findings sang nút DAG $\to$ đồ thị bằng chứng nền.
+  \item \textbf{Tìm kiếm trên cây đa phương thức:} Tác tử VLM nhận câu hỏi + đồ thị nền + ảnh gốc, rồi mở \textbf{cây tìm kiếm}: mỗi node = trạng thái suy luận; mỗi cạnh = một hành động \emph{thị giác} (\texttt{inspect}, \texttt{re\_detect}, \texttt{compare}) hoặc \emph{ký hiệu} (\texttt{is\_a}, \texttt{disjoint}\ldots). Backtracking + reflection heuristic từ LATS. \textbf{Reward = closure-progress} từ verifier (không phải LLM tự chấm).
+  \item \textbf{Cổng xác minh + phân hạng:} Path thắng (root$\to$leaf) qua verify-gate. Hạng A (path hợp lệ, đáp án = kết quả tất định) $\to$ trace faithful. Hạng B (câu mở) $\to$ gắn cờ. Không nhánh nào qua $\to$ từ chối.
+  \item \textbf{Trình bày:} Path (visual + symbolic steps) $\to$ văn bản cho bác sĩ; VLM chỉ trình bày, không thêm suy luận.
+\end{enumerate}
+
+% ============================================================================
+\section{Phương pháp luận chi tiết}
+\label{sec:methodology}
+% ============================================================================
+
+\subsection{Bước 1: Nhận thức --- EvaX (tách rời, độc lập câu hỏi)}
+
+\subsubsection{Mục tiêu}
+Trích xuất \textbf{dữ kiện nhận thức có vùng gắn} từ ảnh X-quang \textbf{trước khi đọc câu hỏi}. Mỗi dữ kiện là một bộ bốn:
+
+\begin{equation}
+f_i = \langle \texttt{khái\_niệm}_i,\; \texttt{hộp\_bao}_i,\; \texttt{bên}_i,\; \texttt{độ\_tin\_cậy}_i \rangle
+\label{eq:fact}
+\end{equation}
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \texttt{khái\_niệm}: tên phát hiện lâm sàng (ví dụ: ``tim to'', ``tràn dịch màng phổi'').
+  \item \texttt{hộp\_bao}: tọa độ vùng trên ảnh $(x_1, y_1, x_2, y_2)$.
+  \item \texttt{bên}: $\in \{\text{trái},\; \text{phải},\; \text{hai bên},\; \text{giữa}\}$.
+  \item \texttt{độ\_tin\_cậy}: $\in [0, 1]$.
+\end{itemize}
+
+\subsubsection{Mô hình sử dụng}
+\textbf{EvaX} --- bộ phát hiện chuyên X-quang ngực, \textbf{đóng băng} (không tinh chỉnh). EvaX trả về hộp bao + nhãn phát hiện + độ tin cậy cho mỗi bất thường phát hiện được. LLaVA-Med \textbf{không} tham gia bước này (nhận thức hoàn toàn tách rời khỏi suy luận).
+
+\textbf{Tại sao tách rời?} Nếu tác tử VLM nhìn ảnh trong vòng lặp suy luận, câu hỏi sẽ ``mồi'' những gì mô hình thấy --- đúng lối tắt mà cả dự án đang chống. Nhận thức độc lập câu hỏi còn đảm bảo câu hỏi phủ định hoạt động đúng (cần \emph{mọi} phát hiện, không chỉ phát hiện liên quan câu hỏi).
+
+\subsubsection{Ví dụ minh họa --- kịch bản xuyên suốt}
+Xuyên suốt tài liệu, ta dùng một kịch bản lâm sàng duy nhất: \textbf{bệnh nhân ho sốt, nghi viêm phổi, chụp X-quang ngực}.
+
+Bước nhận diện trả về ba phát hiện:
+
+\begin{examplebox}
+\small
+$\mathcal{F}_\text{ảnh} = \{$\\
+\quad $\langle \text{đông\_đặc},\; (250, 180, 420, 350),\; \text{phải},\; 0{,}88 \rangle,$\\
+\quad $\langle \text{mờ\_kính},\; (260, 350, 400, 480),\; \text{phải},\; 0{,}71 \rangle,$\\
+\quad $\langle \text{tim\_to},\; (100, 200, 360, 450),\; \text{giữa},\; 0{,}55 \rangle$\\
+$\}$
+\end{examplebox}
+
+Ngưỡng tin cậy $\tau = 0{,}5$ được dùng để lọc bỏ phát hiện nhiễu. Ba phát hiện trên đều vượt ngưỡng.
+
+% ---
+
+\subsection{Bước 2: Phân loại câu hỏi (Question Typing)}
+
+\subsubsection{Mục tiêu}
+Xác định \textbf{loại câu hỏi} để cổng xác minh biết áp dụng điều kiện đóng nào. Trong v3, tác tử VLM tự phân loại câu hỏi như bước đầu tiên của vòng lặp ReAct (không cần module parser riêng). Kết quả là một trong bốn loại --- quyết định \textbf{cổng xác minh nào} được áp dụng ở cuối.
+
+\begin{table}[H]
+\centering\small
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{>{\bfseries}p{2.8cm} c p{4.5cm} p{3cm}}
+\toprule
+Loại & Ký hiệu & Ví dụ câu hỏi & Hạng \\
+\midrule
+Tồn tại (có hay không) & $\exists$ & ``Có tim to không?'' \par ``Có bất thường tim không?'' & A (xác minh) \\
+\midrule
+Phủ định (vắng mặt) & $\neg\exists$ & ``Phổi có sạch không?'' \par ``Có tràn dịch không?'' & A (xác minh) \\
+\midrule
+Quan hệ / đếm & $R(\cdot,\cdot)$ & ``Đông đặc ở bên nào?'' \par ``Bao nhiêu bất thường?'' & A (xác minh) \\
+\midrule
+Mở (ngoài bản thể học) & mở & ``Mô tả bất thường chính'' & B (gắn cờ) \\
+\bottomrule
+\end{tabular}
+\caption{Bốn loại câu hỏi và hạng xác minh tương ứng}
+\end{table}
+
+\subsubsection{Quy tắc bảo thủ}
+
+Trường \texttt{loại} là \textbf{an toàn-tới-hạn}: phân loại sai một câu phủ định thành tồn tại $\to$ tác tử có thể thoát sớm $\to$ kết luận không hợp lý. Hai quy tắc:
+
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Lệch bảo thủ khi mơ hồ:} không chắc $\to$ chọn loại có điều kiện đóng \emph{chặt hơn} (liệt kê thế giới đóng hoặc từ chối). Không bao giờ mặc định về thoát-sớm.
+  \item \textbf{Đo và báo cáo riêng} độ chính xác phân loại loại câu hỏi --- nguồn lỗi minh bạch, tương tự \texttt{chính\_xác\_liên\_kết}.
+\end{enumerate}
+
+\subsubsection{Lập kế hoạch ≠ phân rã}
+Trong v3, tác tử VLM được phép \textbf{lập kế hoạch} (chọn phép toán nào nối phép toán nào) nhưng \textbf{cấm phân rã} (decompose) --- tức không được tự tách câu hỏi thành các bước suy luận con rồi tự trả lời. Sự khác biệt:
+
+\begin{description}[leftmargin=1.5em, style=nextline]
+  \item[Lập kế hoạch trên đồ thị (CHO PHÉP)]
+  Tác tử nhìn đồ thị bằng chứng, chọn gọi \texttt{is\_a(``đông\_đặc'', ``bất\_thường\_phổi'')} --- đây là hành động có kết quả tất định từ công cụ. Tác tử chỉ \emph{điều hướng}, không tự sinh kết quả.
+
+  \item[Phân rã câu hỏi (CẤM)]
+  Tác tử tự tách ``có tim to không?'' $\to$ ``bước 1: đo chỉ số tim-ngực; bước 2: nếu $>$0,5 thì có''. Ở đây VLM đang \textbf{tự áp luật lâm sàng} --- luật đó phải nằm trong bản thể học / engine, không phải trong prompt.
+\end{description}
+
+% ---
+
+\subsection{Bước 3: Liên kết khái niệm + Dựng đồ thị bằng chứng}
+
+\subsubsection{Mục tiêu}
+Ánh xạ mỗi tên phát hiện từ EvaX sang \textbf{nút chuẩn} trong DAG bản thể học, rồi ghép các dữ kiện nhận thức vào DAG $\to$ \textbf{đồ thị bằng chứng} riêng của ảnh:
+\[
+\mathcal{G}_\text{ảnh} = \mathcal{G}_\text{bản thể học} \;\cup\; \{v_i \mid f_i \in \mathcal{F}_\text{ảnh}\}
+\]
+
+\subsubsection{Ai làm liên kết?}
+\textbf{LLaVA-Med 7B} (đóng băng, prompt-only) thực hiện liên kết khái niệm. Với pilot VinDr (nhãn đóng, 14 phát hiện), đây gần như là tra bảng 1-1. Với tập dữ liệu rộng hơn, chiến lược ba tầng:
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Khớp chính xác:} Tra bảng từ đồng nghĩa.
+  \item \textbf{Khớp mờ:} Embedding similarity khi khớp chính xác thất bại.
+  \item \textbf{VLM dự phòng:} LLaVA-Med ánh xạ tên hiếm/mới (đóng băng, chỉ prompt).
+\end{enumerate}
+
+\subsubsection{Tại sao bước này quan trọng}
+Liên kết khái niệm là \textbf{nguồn lỗi tương quan chính}: nếu EvaX phát hiện sai, tác tử cũng suy luận sai trên đồ thị. Đây là lý do công cụ truy xuất ($E_\text{rag}$) --- mà tác tử có thể gọi trong vòng lặp ReAct --- được thiết kế \textbf{hoàn toàn độc lập} với dữ kiện nhận thức, đóng vai ``ý kiến thứ hai'' từ ca tương tự.
+
+Độ chính xác liên kết được \textbf{đo và báo cáo riêng}, không ẩn trong chỉ số tổng.
+
+% ---
+
+\subsection{Bước 4: Đồ thị bản thể học (Ontology DAG)}
+
+\subsubsection{Tại sao không dùng RadLex hay SNOMED CT?}
+
+Các bản thể học y khoa sẵn có (RadLex, SNOMED CT) là \textbf{từ điển thuật ngữ có phân cấp}, không phải cơ sở tri thức suy luận:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{RadLex} ($\sim$68.000 thuật ngữ): cung cấp phân cấp \texttt{is-a} và ánh xạ đồng nghĩa cho chẩn đoán hình ảnh --- nhưng \textbf{không có} quan hệ loại trừ (\texttt{disjoint-with}), không có danh sách loại trừ thế giới đóng, không có luật tổ hợp bên (laterality). RadLex nói ``cardiomegaly is-a cardiac finding'' nhưng không nói \emph{khi nào} kết luận cardiomegaly, \emph{những gì} phải loại trừ trước khi khẳng định ``phổi sạch'', hay ``tràn khí và tràn dịch không thể cùng có mặt trên cùng khoang''. Nói cách khác, RadLex \textbf{liệt kê cái gì tồn tại}, không nói \textbf{cái gì suy ra từ cái gì}.
+  \item \textbf{SNOMED CT} ($\sim$350.000 khái niệm): có nhiều quan hệ hơn (\texttt{finding-site}, \texttt{causative-agent}\ldots) nhưng hướng tới \textbf{mã hóa hồ sơ bệnh án}, không phải suy luận chẩn đoán hình ảnh. Quá lớn, quá chung $\to$ nhiễu nhiều hơn tín hiệu cho task X-quang ngực.
+\end{itemize}
+
+Do đó KRONOS \textbf{tự xây DAG riêng}: lấy cảm hứng phân cấp \texttt{is-a} từ RadLex để khởi tạo, nhưng \textbf{thêm vào} ba loại quan hệ mà RadLex không có (\texttt{disjoint-with}, \texttt{laterality}, danh sách loại trừ), và \textbf{cắt bỏ} hàng chục nghìn nút không liên quan đến task.
+
+\subsubsection{Cấu trúc}
+Bản thể học $\mathcal{G} = (V, E, R)$ là một \textbf{đồ thị có hướng không chu trình (DAG) nhỏ, tĩnh, kiểm soát phiên bản}:
+\begin{itemize}[leftmargin=1.5em]
+  \item $V$: khoảng vài trăm nút (phát hiện + giải phẫu + khái niệm trừu tượng).
+  \item $E \subseteq V \times V$: cạnh có nhãn quan hệ.
+  \item $R = \{\texttt{is-a},\; \texttt{disjoint-with},\; \texttt{part-of},\; \texttt{laterality}\}$: chỉ bốn loại quan hệ mà engine thực sự dùng.
+\end{itemize}
+
+\subsubsection{Bốn vai trò suy luận}
+
+Engine sử dụng đúng bốn loại quan hệ để suy luận. Mỗi loại phục vụ một vai trò riêng:
+
+\begin{description}[leftmargin=1.5em, style=nextline]
+  \item[\texttt{is-a} (bao hàm)] Duyệt tổ tiên theo bắc cầu: nếu tồn tại đường đi $c \to \cdots \to C$ trên cạnh \texttt{is-a}, thì $c$ thuộc loại $C$.
+
+  \textit{Ví dụ:} $\text{tim\_to} \xrightarrow{\texttt{is-a}} \text{bất\_thường\_tim} \xrightarrow{\texttt{is-a}} \text{bất\_thường}$.
+
+  Câu hỏi ``Có bất thường tim không?'' được trả lời ``Có'' khi phát hiện tim to, dù câu hỏi không hỏi trực tiếp về tim to.
+
+  \item[\texttt{disjoint-with} (loại trừ lẫn nhau)] Hai nút $A$, $B$ loại trừ nhau thì không thể cùng xuất hiện trên cùng vùng giải phẫu.
+
+  \textit{Ví dụ:} Tràn khí màng phổi và tràn dịch màng phổi loại trừ nhau trên cùng khoang màng phổi. Nếu một ứng viên nói cả hai cùng có mặt ở bên trái, engine báo \textbf{LỖI}.
+
+  \item[\texttt{part-of} (ánh xạ giải phẫu)] Ánh xạ vùng pixel trên ảnh sang tên giải phẫu, dùng để trả lời câu hỏi ``ở đâu''.
+
+  \textit{Ví dụ:} Hộp bao $(120,200,380,450)$ chồng lấn vùng trung thất $\to$ ``phát hiện nằm ở vùng trung thất''.
+
+  \item[\texttt{laterality} (bên)] Kết hợp phát hiện với bên giải phẫu.
+
+  \textit{Ví dụ:} Tràn dịch + nửa ngực trái $\to$ ``tràn dịch màng phổi bên trái''.
+\end{description}
+
+\subsubsection{Trích đoạn DAG minh họa}
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  every node/.style={font=\footnotesize},
+  concept/.style={rectangle, draw=kronblue, fill=kronlight, rounded corners=2pt,
+                  minimum width=2.2cm, minimum height=0.7cm, align=center, text=krondark},
+  anatomy/.style={rectangle, draw=krongreen, fill=krongreen!10, rounded corners=2pt,
+                  minimum width=2.2cm, minimum height=0.7cm, align=center, text=krondark},
+  isa/.style={-{Stealth[length=2mm]}, kronblue, line width=0.5pt},
+  partof/.style={-{Stealth[length=2mm]}, krongreen, dashed, line width=0.5pt},
+  disj/.style={kronred, line width=0.6pt, dashed, {Stealth[length=2mm]}-{Stealth[length=2mm]}}
+]
+
+% === Tầng 0: gốc ===
+\node[concept] (abn) at (0,0) {bất thường};
+
+% === Tầng 1: ba nhánh chính, cách đều ===
+\node[concept] (card) at (-5, -1.8) {bất thường tim};
+\node[concept] (pulm) at ( 0, -1.8) {bất thường phổi};
+\node[concept] (pleu) at ( 5, -1.8) {bất thường\\màng phổi};
+
+% === Tầng 2: phát hiện cụ thể ===
+\node[concept] (cm)   at (-5, -3.6) {tim to};
+\node[concept] (cons) at (-1, -3.6) {đông đặc};
+\node[concept] (opac) at ( 1, -3.6) {mờ kính};
+\node[concept] (pe)   at ( 4, -3.6) {tràn dịch\\màng phổi};
+\node[concept] (ptx)  at ( 6.5, -3.6) {tràn khí\\màng phổi};
+
+% === Giải phẫu (tách riêng bên phải) ===
+\node[anatomy] (rlung) at (9.5, -1.8) {phổi phải};
+\node[anatomy] (llung) at (9.5, -3.6) {phổi trái};
+\node[anatomy] (thorax) at (9.5, -0.3) {lồng ngực};
+
+% === Cạnh is-a ===
+\draw[isa] (cm)   -- (card);
+\draw[isa] (card) -- (abn);
+\draw[isa] (cons) -- (pulm);
+\draw[isa] (opac) -- (pulm);
+\draw[isa] (pulm) -- (abn);
+\draw[isa] (pe)   -- (pleu);
+\draw[isa] (ptx)  -- (pleu);
+\draw[isa] (pleu) -- (abn);
+
+% === Cạnh part-of ===
+\draw[partof] (rlung) -- node[right, font=\scriptsize] {thuộc} (thorax);
+\draw[partof] (llung) -- node[right, font=\scriptsize] {thuộc} (thorax);
+
+% === Cạnh loại trừ ===
+\draw[disj] (pe) -- node[below, font=\scriptsize, text=kronred] {$\perp$} (ptx);
+
+% === Chú thích ===
+\node[font=\scriptsize, text=kronblue]  at (0.5, -5) {$\longrightarrow$ bao hàm (is-a)};
+\node[font=\scriptsize, text=krongreen] at (4.5, -5) {$\dashrightarrow$ thuộc (part-of)};
+\node[font=\scriptsize, text=kronred]   at (8.5, -5) {$\leftrightarrow$ loại trừ lẫn nhau};
+
+\end{tikzpicture}%
+}
+\caption{Trích đoạn DAG bản thể học. Ba nhánh phát hiện (tim, phổi, màng phổi) chia rõ tầng; giải phẫu tách riêng bên phải. Tràn dịch và tràn khí loại trừ nhau ($\perp$) trên cùng khoang.}
+\label{fig:dag}
+\end{figure}
+
+\subsubsection{Danh sách loại trừ thế giới đóng}
+Cho mỗi phát hiện $c$ trong DAG, \textbf{danh sách loại trừ} $\mathcal{E}(c)$ liệt kê \emph{tất cả} các phát hiện mà engine phải kiểm tra trước khi kết luận ``$c$ vắng mặt'':
+
+\begin{equation}
+\mathcal{E}(\text{tràn\_dịch\_MP}) = \{\text{tràn\_dịch\_MP},\; \text{tràn\_dịch\_nước},\; \text{mủ\_MP},\; \text{tràn\_máu\_MP}\}
+\end{equation}
+
+Để kết luận ``không có tràn dịch màng phổi'', engine phải xác minh rằng \textbf{không phát hiện nào} trong $\mathcal{E}$ được nhận diện ở bước~1. Nếu danh sách chưa đầy đủ (ví dụ: một phân loại phụ mới chưa có), engine \textbf{từ chối} thay vì kết luận vắng mặt.
+
+Các danh sách này được \textbf{biên soạn thủ công, cố định, kiểm soát phiên bản} --- đây là điểm duy nhất hệ thống phụ thuộc vào công sức biên soạn.
+
+% ---
+
+\subsection{Bước 4: Tìm kiếm trên cây đa phương thức (Verifier-Guided Multimodal Tree Search)}
+
+Đây là \textbf{thành phần cốt lõi} của KRONOS. Thay vì suy luận tuyến tính (ReAct: sai bước đầu $\to$ mất cả chuỗi), tác tử VLM (LLaVA-Med 7B, đóng băng) mở \textbf{cây tìm kiếm}, đan xen hành động \textbf{thị giác} (nhìn ảnh) và \textbf{ký hiệu} (truy vấn đồ thị), dẫn bởi \textbf{verifier-as-value} (không phải LLM tự chấm).
+
+\subsubsection{Cây tìm kiếm}
+
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Gốc (root):} Câu hỏi $q$ + đồ thị bằng chứng nền $\mathcal{G}_\text{ảnh}$ + ảnh gốc $I$.
+  \item \textbf{Mở rộng (expand):} Tại mỗi node, tác tử sinh $k$ hành động ứng viên (thị giác hoặc ký hiệu). Mỗi hành động tạo node con mới với trạng thái cập nhật (graph mới nếu visual action thêm fact, observation mới).
+  \item \textbf{Đánh giá (evaluate):} \textbf{Reward = closure-progress} từ bộ xác minh tất định:
+    \begin{itemize}
+      \item Tồn tại: đã có witness path? $\to$ reward cao.
+      \item Phủ định: tỉ lệ exclusion-list đã kiểm + nhất quán disjoint.
+      \item Quan hệ: anatomy/laterality đã resolve?
+      \item Kiểm tra nhất quán: không vi phạm disjoint $\to$ thưởng; vi phạm $\to$ phạt nặng.
+    \end{itemize}
+    \textbf{LLM self-eval chỉ làm heuristic xếp thứ tự} khám phá, không bao giờ là reward chọn đáp án.
+  \item \textbf{Quay lui (backtrack):} Nếu nhánh hiện tại bế tắc (reward thấp, hết bước), quay lại node cha, thử nhánh khác. Đây là ưu thế so với ReAct tuyến tính.
+  \item \textbf{Phản tư (reflection):} Khi nhánh thất bại, tác tử sinh một dòng ``phản tư'' ngắn (tại sao sai) $\to$ lưu làm context cho nhánh tiếp. \textbf{Chỉ dẫn đường, không vào trace.}
+  \item \textbf{Kết thúc:} Tác tử phát \texttt{Answer[...]} khi nhánh đạt verify PASS; hoặc \texttt{Abstain} khi cây cạn (hết ngân sách $B$ node).
+\end{enumerate}
+
+\subsubsection{Bộ hành động đa phương thức (Action Set)}
+
+Bộ hành động gồm hai nhóm: \textbf{thị giác} (tác tử nhìn lại ảnh) và \textbf{ký hiệu} (truy vấn đồ thị). Kết quả visual action được \emph{fold vào graph} dưới dạng fact mới (vùng + nhãn + conf).
+
+\begin{table}[H]
+\centering\small
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{>{\ttfamily\small}p{4.2cm} p{4.5cm} p{2cm} p{2cm}}
+\toprule
+\textbf{Hành động} & \textbf{Chức năng} & \textbf{Ai chạy} & \textbf{Loại} \\
+\midrule
+inspect(bbox) & Zoom \& mô tả vùng ảnh & LLaVA-Med & Thị giác \\
+re\_detect(region) & Phát hiện lại trên sub-region & EvaX & Thị giác \\
+compare(r1, r2) & So sánh hai vùng ảnh & LLaVA-Med & Thị giác \\
+\midrule
+is\_a(node, target) & Duyệt bắc cầu is-a & Engine (CPU) & Ký hiệu \\
+disjoint(a, b) & Kiểm tra loại trừ & Engine & Ký hiệu \\
+anatomy\_of(bbox) & IoU $\to$ giải phẫu & Engine & Ký hiệu \\
+compose\_laterality(n, bb) & Bên trái/phải/giữa & Engine & Ký hiệu \\
+get\_exclusion\_list(node) & Danh sách thế giới đóng & Engine & Ký hiệu \\
+retrieve(img\_emb, k) & Top-$k$ ca tương tự & FAISS & Ký hiệu \\
+\bottomrule
+\end{tabular}
+\caption{Bộ hành động đa phương thức: 3 thị giác + 6 ký hiệu}
+\end{table}
+
+\textbf{Điểm then chốt --- reasoning vá perception:} \texttt{re\_detect} cho tác tử \textbf{nhìn lại vùng ảnh} mà lần quét toàn cục (EvaX) có thể bỏ sót (ví dụ: nốt nhỏ). Finding mới được fold vào graph $\to$ reasoning kéo \emph{cả accuracy}, không chỉ faithfulness.
+
+\textbf{Quy tắc:} Visual action chỉ \emph{thêm/tinh chỉnh} fact; \textbf{không thay thế} evidence nền từ EvaX $\to$ không phá closed-world negation.
+
+\subsubsection{Ví dụ: cây tìm kiếm cho câu hỏi ``Đông đặc ở bên nào?'' (relational)}
+
+\begin{examplebox}
+\small
+\textbf{Câu hỏi:} ``Đông đặc ở bên nào?'' \quad \textbf{Nền:} $\{\text{đông\_đặc}^{0{,}88}_{(250,180,420,350)}\}$
+
+\medskip
+\textbf{Nhánh A (ký hiệu trước):}\\
+$\to$ \texttt{anatomy\_of((250,180,420,350))} $\to$ ``phổi phải'' $\to$ \texttt{Answer[phải]} $\to$ verify: Hạng A ĐẠT.
+
+\medskip
+\textbf{Nhánh B (thị giác trước, thử song song):}\\
+$\to$ \texttt{inspect((250,180,420,350))} $\to$ ``vùng mờ đồng nhất, phổi phải'' $\to$ xác nhận $\to$ \texttt{Answer[phải]}.
+
+\medskip
+\textbf{Verifier chọn:} Nhánh A (closure-progress = 1.0 ngay bước 1, ký hiệu sound). Nhánh B corroborate. Path thắng = Nhánh A.
+\end{examplebox}
+
+\subsubsection{Ví dụ: cây tìm kiếm với re\_detect vá perception (trường hợp mạnh nhất)}
+
+\begin{examplebox}
+\small
+\textbf{Câu hỏi:} ``Có nốt phổi không?'' \quad \textbf{Nền EvaX:} $\{\text{tim\_to}^{0{,}55}\}$ (EvaX bỏ sót nốt nhỏ!)
+
+\medskip
+\textbf{Nhánh A (ký hiệu):}\\
+$\to$ \texttt{is\_a(``tim\_to'', ``nốt\_phổi'')} $\to$ None. Không có witness $\to$ reward thấp.
+
+\medskip
+\textbf{Nhánh B (thị giác --- tác tử nghi ngờ, chọn nhìn lại):}\\
+$\to$ \texttt{re\_detect((100,300,250,450))} $\to$ EvaX trên sub-region phát hiện \textbf{nốt nhỏ} (conf=0.72, bbox mới) $\to$ fold vào graph $\to$ \texttt{is\_a(``nốt\_phổi'', ``nốt\_phổi'')} $\to$ witness! $\to$ \texttt{Answer[Có]} $\to$ verify: Hạng A ĐẠT.
+
+\medskip
+\textbf{Path thắng = Nhánh B:} \texttt{re\_detect} $\to$ \texttt{is\_a} $\to$ ĐẠT. Trace gồm cả bước thị giác (cite vùng bác sĩ kiểm được) lẫn ký hiệu (sound). \textbf{Reasoning đã vá lỗi perception.}
+\end{examplebox}
+
+% ---
+
+\subsection{Bước 5: Cổng xác minh + Phân hạng}
+
+\subsubsection{Vai trò}
+Sau khi tác tử phát câu trả lời, cổng xác minh \textbf{kiểm tra đường đi} (chuỗi lệnh gọi công cụ và kết quả) để phân hạng:
+
+\begin{highlightbox}
+\textbf{Bộ xác minh} (verifier) đóng \textbf{hai vai}: (i)~\textbf{value function} dẫn cây (closure-progress ở mỗi node); (ii)~\textbf{cổng xác minh} trên path thắng (terminal). Nó kiểm tra:
+\begin{enumerate}[leftmargin=0.5em]
+  \item \textbf{Bước ký hiệu:} kết quả khớp tất định trên DAG? (sound)
+  \item \textbf{Bước thị giác:} có cite vùng cụ thể? finding mới nhất quán với ontology? (evidence-traceable)
+  \item \textbf{Đáp án:} suy ra tất định từ kết quả cuối? Điều kiện đóng thỏa mãn? (hợp lý + đầy đủ)
+\end{enumerate}
+\end{highlightbox}
+
+\textbf{Faithfulness kép:} ký hiệu = \emph{sound} (chứng minh trên DAG); thị giác = \emph{evidence-traceable + deletion-test} (cite vùng bác sĩ audit được; xóa vùng $\to$ đáp án đổi). Không claim ``provably-sound'' cho bước neural --- đây là claim trung thực nhất.
+
+\subsubsection{Ba hạng đầu ra}
+
+\begin{description}[leftmargin=1.5em, style=nextline]
+  \item[Hạng A --- Trung thực (path qua verify-gate)]
+  Path hợp lệ: bước ký hiệu = sound; bước thị giác = cite vùng + nhất quán ontology; đáp án = kết quả tất định; điều kiện đóng thỏa.
+  $\to$ Phát \textbf{kèm path (visual + symbolic steps) như trace audit được}. \textbf{Headline} --- EF@k và deletion test đánh giá ở đây.
+
+  \item[Hạng B --- Chưa xác minh]
+  Câu mở ngoài bản thể học, hoặc path không đạt verify nhưng tác tử có đáp án.
+  $\to$ Gắn cờ ``chỉ nhận thức, chưa xác minh'', báo cáo tách riêng. \textbf{Không} tính vào tuyên bố faithful.
+
+  \item[Từ chối]
+  Cây cạn mà không nhánh nào qua verify.
+  $\to$ \textbf{TỪ CHỐI} (dự đoán chọn lọc).
+\end{description}
+
+\textbf{Nguyên tắc:} \emph{Trung thực (Hạng A) $>$ chính xác (Hạng B) $>$ đoán}. Hạng B luôn đánh dấu rõ.
+
+\subsubsection{Bốn phép kiểm tra tất định (kế thừa engine v2)}
+
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Kiểm tra bao hàm:} Đường đi chứa \texttt{is\_a} $\to$ kiểm tra đường đi trên DAG có tồn tại không.
+  \item \textbf{Kiểm tra loại trừ:} Đường đi khẳng định hai phát hiện cùng có mặt $\to$ kiểm tra \texttt{disjoint-with}.
+  \item \textbf{Kiểm tra bên:} Đường đi gắn bên $\ell$ $\to$ kiểm tra nhất quán với hộp bao.
+  \item \textbf{Kiểm tra giải phẫu:} Đường đi nói phát hiện ở giải phẫu $A$ $\to$ kiểm tra IoU hộp bao với vùng $A$.
+\end{enumerate}
+
+\subsubsection{Điều kiện đóng (khi nào xác minh kết luận)}
+
+\begin{description}[leftmargin=1.5em, style=nextline]
+  \item[Tồn tại ($\exists$)]
+  Đơn điệu: 1 nhân chứng \texttt{is\_a} đủ $\to$ Hạng A.
+
+  \item[Phủ định ($\neg\exists$)]
+  \textbf{Không đơn điệu}: toàn bộ danh sách loại trừ phải được kiểm tra. Thiếu danh sách $\to$ từ chối.
+
+  \item[Quan hệ / đếm]
+  Đường đi chứa \texttt{anatomy\_of} hoặc \texttt{compose\_laterality} + kết quả khớp câu trả lời $\to$ Hạng A.
+
+  \item[Mở]
+  Không có điều kiện đóng khai báo $\to$ Hạng B (gắn cờ) hoặc từ chối.
+\end{description}
+
+% ---
+
+\subsection{Bước 6: Trình bày trace cho bác sĩ}
+
+Path thắng (gồm cả bước thị giác lẫn ký hiệu) được chuyển thành \textbf{văn bản + vùng ảnh} cho bác sĩ. VLM chỉ trình bày, không thêm suy luận:
+
+\begin{examplebox}[colback=kronlight, colframe=kronaccent]
+\small
+\textbf{Path:} \texttt{re\_detect((100,300,250,450))} $\to$ nốt phổi (0.72) $\to$ \texttt{is\_a(``nốt\_phổi'', ``nốt\_phổi'')} $\to$ witness.
+
+\medskip
+\textbf{Trình bày:} ``Tác tử phát hiện lại vùng phổi dưới phải [hộp bao hiển thị] và tìm thấy nốt phổi (tin cậy 72\%). Nốt phổi khớp khái niệm mục tiêu. Vậy có nốt phổi.''
+
+\medskip
+\textbf{Hạng:} A (path hợp lệ, verify ĐẠT). Bác sĩ thấy \textbf{cả vùng ảnh} (bước thị giác) lẫn \textbf{quan hệ ontology} (bước ký hiệu) trong cùng trace.
+\end{examplebox}
+
+Nếu xóa bước \texttt{re\_detect} hoặc cạnh \texttt{is\_a}, đáp án đổi $\Rightarrow$ \textbf{trace nhân quả}.
+
+% ---
+
+\subsection{Đánh giá: EF@k và Kiểm tra xóa}
+
+\subsubsection{EF@k --- Trung thực bằng chứng tại $k$}
+Đo mức chồng lấn giữa đường đi và vùng bằng chứng chuẩn (chỉ trên \textbf{Hạng A}):
+
+\begin{equation}
+\text{EF@}k = \frac{1}{|\mathcal{Q}_A|} \sum_{q \in \mathcal{Q}_A} \frac{|\text{đường\_đi}(q) \cap \text{chuẩn}(q)|}{|\text{chuẩn}(q)|}
+\end{equation}
+
+trong đó $\mathcal{Q}_A$ là tập câu hỏi được trả lời ở Hạng A.
+
+\subsubsection{Kiểm tra xóa --- xác minh tính nhân quả}
+Cho mỗi câu hỏi Hạng A đã trả lời đúng:
+\begin{enumerate}[leftmargin=1.5em]
+  \item Lấy đường đi $\pi = \{e_1, e_2, \ldots, e_n\}$ (danh sách phép toán).
+  \item Với mỗi $e_i \in \pi$: xóa dữ kiện/cạnh tương ứng khỏi $\mathcal{G}_\text{ảnh}$, chạy lại tác tử.
+  \item Kiểm tra: câu trả lời có thay đổi không?
+\end{enumerate}
+
+\begin{equation}
+\text{TỉLệXóa} = \frac{1}{|\pi|} \sum_{i=1}^{|\pi|} \mathbb{1}\big[\texttt{trả\_lời}(\mathcal{G}_\text{ảnh} \setminus \{e_i\}) \neq \texttt{trả\_lời}(\mathcal{G}_\text{ảnh})\big]
+\end{equation}
+
+\textbf{Tỉ lệ xóa cao} ($\to 1{,}0$): đường đi là \emph{nguyên nhân} dẫn đến câu trả lời --- trung thực nhân quả.\\
+\textbf{Tỉ lệ xóa thấp} ($\to 0$): đường đi chỉ là trang trí --- không thực sự trung thực.
+
+Vì mỗi hành động trong đường đi là một \textbf{phép toán tất định trên đồ thị}, xóa cạnh/nút liên quan \emph{buộc} phép toán trả kết quả khác $\to$ câu trả lời \emph{phải} đổi (trừ khi có đường đi thay thế). Đây là ưu thế cấu trúc so với chain-of-thought tự do.
+
+\subsection{Vì sao mỗi bước đều khả thi --- kiểm chứng logic}
+
+Một câu hỏi tự nhiên: pipeline v3 nghe phức tạp --- liệu có làm được không?
+
+\begin{table}[H]
+\centering\small
+\renewcommand{\arraystretch}{1.35}
+\begin{tabular}{>{\bfseries}p{2.4cm} p{4.3cm} p{5.3cm}}
+\toprule
+Bước & Cách đơn giản nhất & Khả thi vì \\
+\midrule
+1. Nhận thức (EvaX) & Detector CXR đóng băng & Detection CXR đã chín; EvaX có sẵn, không cần train \\
+2. Phân loại câu hỏi & Tác tử tự phân loại (3--4 lớp) & Dấu hiệu cú pháp bề mặt; đo riêng trên tập nhãn \\
+3. Liên kết + đồ thị & Tra bảng / LLaVA-Med prompt & VinDr nhãn đóng $\to$ gần tầm thường \\
+4. DAG bản thể học & $\sim$40--50 nút + 4 quan hệ & Quy mô nhỏ; một người làm vài ngày \\
+5. Tác tử ReAct & LLaVA-Med 7B + prompt ReAct & Frozen, chỉ prompt; bộ công cụ đơn giản (6 hàm) \\
+6. Cổng xác minh & Hàm đồ thị tất định & Thuật toán cổ điển trên đồ thị nhỏ $\to$ mili-giây \\
+7. Trình bày & Template ``X is-a Y'' & Template đủ; VLM chỉ tô chữ \\
+\bottomrule
+\end{tabular}
+\caption{Kiểm chứng khả thi từng bước (v3)}
+\end{table}
+
+\begin{keyinsight}
+\textbf{Không bước nào cần phát minh kỹ thuật mới.} Mỗi bước hoặc là (a) mô hình đóng băng có sẵn, (b) quy mô nhỏ làm tay được, hoặc (c) thuật toán cổ điển. Cái \emph{mới} là \textbf{cách lắp ghép}: tác tử VLM đi trên đồ thị bằng công cụ tất định + cổng xác minh + phân hạng trung thực. So với v2 (ba đầu đề xuất + router + phân xử), v3 \emph{đơn giản hơn} (bỏ router train, bỏ phân xử đa đầu) mà \emph{mạnh hơn} (agent linh hoạt xử lý câu multi-hop mà engine cứng phải bỏ cuộc).
+\end{keyinsight}
+
+% ---
+
+\subsection{Bốn tính chất cốt lõi của engine (công cụ + xác minh)}
+
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Tất định, tái lập:} Cùng đồ thị + cùng lệnh gọi $\to$ luôn cùng kết quả. Không lấy mẫu, không trọng số. Với giải mã tham lam (greedy) cho tác tử, toàn bộ pipeline cũng tái lập.
+  \item \textbf{Hợp lý theo cấu trúc (sound-by-construction):} Cổng xác minh chỉ trả Hạng A khi \emph{thực sự có} đường đi hợp lệ trên đồ thị bằng chứng.
+  \item \textbf{Đường đi = sản phẩm phụ:} Chuỗi lệnh gọi công cụ mà tác tử thực thi \emph{chính là} chuỗi suy luận --- không phải VLM kể lại hậu kỳ. Xóa cạnh/nút $\to$ công cụ trả khác $\to$ đáp án đổi (kiểm tra xóa).
+  \item \textbf{CPU, rẻ:} Mỗi công cụ chỉ là thuật toán đồ thị (BFS, bao đóng bắc cầu, IoU) trên vài trăm nút $\to$ mili-giây.
+\end{enumerate}
+
+% (Các phần chi tiết cũ của engine v2 — E_sym vs verifier, chế độ xác minh, bốn phép kiểm tra,
+%  điều kiện đóng, ví dụ phủ định, phân xử, router, trình bày cũ, đánh giá cũ, bảng khả thi cũ —
+%  đã được thay thế hoàn toàn bởi Bước 4–6 và các bảng mới ở trên.)
+
+% ============================================================================
+\section{Tính đổi mới và khác biệt}
+% ============================================================================
+
+\subsection{So sánh với giải pháp hiện có}
+
+\begin{table}[H]
+\centering\small
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{>{\bfseries}p{2cm} p{2.2cm} p{2.2cm} p{2.2cm} p{2.2cm} p{2.5cm}}
+\toprule
+Tiêu chí & VQA LLM & MedReason & LATS & Visual-MCTS & \textbf{KRONOS v4} \\
+\midrule
+Reasoning & CoT & CoT & Cây+text & Cây+thị giác & \textbf{Cây+thị giác+ký hiệu} \\
+KG inference & Không & Không & Không & Không & \textbf{Có} (DAG) \\
+Value fn & --- & --- & LLM self-eval & Reward model & \textbf{Verifier tất định} \\
+Faithful & Hậu kỳ & Hậu kỳ & Không claim & Không claim & \textbf{Nhân quả (deletion)} \\
+Vá perception & Không & Không & Không & Có & \textbf{Có} (re\_detect) \\
+Train & Fine-tune & Fine-tune & Fine-tune & Fine-tune & \textbf{Frozen} \\
+\bottomrule
+\end{tabular}
+\caption{So sánh KRONOS v4 với phương pháp hiện tại. Điểm khác biệt: verifier tất định dẫn cây + hành động đa phương thức + faithful nhân quả + frozen.}
+\end{table}
+
+\subsection{Năm tính năng cốt lõi khác biệt ($>$30\%)}
+
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Verifier-guided multimodal tree search}: cây tìm kiếm đan xen hành động thị giác + ký hiệu, dẫn bởi \textbf{verifier tất định} (verifier-as-value), không phải LLM self-eval (như LATS) hay reward model (như visual-MCTS). Nhánh thắng \emph{tự khắc} faithful.
+  \item \textbf{Reasoning vá perception}: \texttt{re\_detect} cho tác tử nhìn lại vùng ảnh để bắt phát hiện bỏ sót --- kéo \emph{cả accuracy}, không chỉ faithfulness. Suy luận thuần ký hiệu hoặc thuần thị giác không làm được điều này.
+  \item \textbf{Faithfulness kép (nhân quả)}: ký hiệu = sound trên DAG; thị giác = evidence-traceable + deletion-test. Trace gồm cả vùng ảnh (bác sĩ audit) lẫn quan hệ ontology. Không claim provably-sound cho neural --- trung thực về cái mình làm được.
+  \item \textbf{Liệt kê thế giới đóng cho phủ định}: EvaX quét nền + exclusion-list + visual action chỉ thêm, không thay $\to$ phủ định vẫn đúng.
+  \item \textbf{Đóng băng hoàn toàn, không huấn luyện}: EvaX + LLaVA-Med 7B đóng băng; engine + verifier chạy CPU. Tái lập với greedy decoding.
+\end{enumerate}
+
+% ============================================================================
+\section{Tính khả thi}
+% ============================================================================
+
+\subsection{Dữ liệu}
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{l l p{5.5cm} l}
+\toprule
+\textbf{Giai đoạn} & \textbf{Tập dữ liệu} & \textbf{Lý do chọn} & \textbf{Truy cập} \\
+\midrule
+Thí điểm & VinDr-CXR-VQA & Tập nhãn đóng, hộp bao chuẩn cho EF & Công khai \\
+Kiểm tra phủ định & PadChest-GR & Chú thích ``phát hiện vắng mặt'' rõ ràng & Công khai \\
+Mở rộng & GEMeX (ICCV'25) & Vùng chuẩn do bác sĩ tinh chỉnh & PhysioNet \\
+\bottomrule
+\end{tabular}
+\caption{Lộ trình dữ liệu --- tất cả công khai hoặc có quy trình xin phép rõ ràng}
+\end{table}
+
+Không sử dụng dữ liệu bệnh nhân riêng tư.
+
+\subsection{Kỹ thuật --- Xây dựng và triển khai}
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Nhận thức: EvaX} --- bộ phát hiện chuyên CXR, đóng băng. Trả về bbox + nhãn + conf.
+  \item \textbf{Tác tử VLM: LLaVA-Med 7B} --- đóng băng, chỉ prompt (không fine-tune). Chạy \textbf{local} trên 1 GPU suy luận. Đảm nhận liên kết khái niệm + vòng lặp ReAct.
+  \item \textbf{Công cụ tất định (engine):} Python + NetworkX, chạy CPU. Bộ 6 hàm (is\_a, disjoint, anatomy\_of, compose\_laterality, get\_exclusion\_list, retrieve).
+  \item \textbf{Truy xuất (RAG):} Dense retrieval trên kho báo cáo (FAISS). Được ``bọc'' thành công cụ \texttt{retrieve} mà tác tử gọi.
+  \item \textbf{Không có thành phần nào cần huấn luyện.} Toàn bộ pipeline là inference-only.
+\end{itemize}
+
+\subsection{Chi phí hạ tầng}
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{l l l}
+\toprule
+\textbf{Thành phần} & \textbf{Tài nguyên} & \textbf{Ước tính chi phí} \\
+\midrule
+EvaX (đóng băng) & 1 GPU suy luận & GPU đám mây hoặc local \\
+LLaVA-Med 7B (đóng băng) & 1 GPU suy luận (local) & Phần cứng local (không API) \\
+Công cụ tất định (engine) & Chỉ CPU & Gần như miễn phí \\
+Cơ sở dữ liệu vector (RAG) & RAM/SSD & Tối thiểu \\
+Huấn luyện & \textbf{Không có} & 0 \\
+\bottomrule
+\end{tabular}
+\caption{Chi phí hạ tầng --- toàn bộ inference-only, không huấn luyện}
+\end{table}
+
+\subsection{Bảo mật và pháp lý}
+
+\begin{itemize}[leftmargin=1.5em]
+  \item Tất cả dữ liệu đều là tập đánh giá công khai, đã được khử định danh.
+  \item DAG bản thể học là tri thức y khoa tổng quát, không chứa thông tin bệnh nhân.
+  \item Hệ thống \textbf{không thay thế} bác sĩ --- đóng vai trò công cụ hỗ trợ quyết định lâm sàng.
+  \item Cơ chế từ chối đảm bảo hệ thống \textbf{không đưa ra kết luận khi không đủ bằng chứng}.
+\end{itemize}
+
+\subsection{Lộ trình triển khai}
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{c l p{5.5cm} p{3cm}}
+\toprule
+\textbf{Pha} & \textbf{Thời gian} & \textbf{Nội dung} & \textbf{Sản phẩm} \\
+\midrule
+1 & Tuần 1--2 & DAG bản thể học + exclusion lists; EvaX trên VinDr; reasoning-need diagnostic & DAG v1.0 + báo cáo \\
+2 & Tuần 3--5 & Engine (6 symbolic tools + 3 visual tools) + verifier + closure-progress reward & Tool layer chạy \\
+3 & Tuần 6--8 & Tree search (backtrack + reflection) + prompt LLaVA-Med + phân hạng A/B & Pipeline đầu-cuối \\
+4 & Tuần 9--10 & Baselines (ReAct tuyến tính, LLM-value, chỉ ký hiệu, RAG phẳng) + 5 ablation & Bảng so sánh \\
+5 & Tuần 11--12 & EF@k + deletion test + audit bác sĩ + mở rộng PadChest/GEMeX & Kết quả + bản thảo \\
+\bottomrule
+\end{tabular}
+\caption{Lộ trình 12 tuần (v4)}
+\end{table}
+
+% ============================================================================
+\section{Tác động dự kiến}
+% ============================================================================
+
+\subsection{Lợi ích xã hội}
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Tăng độ tin cậy AI y khoa:} Bác sĩ kiểm chứng được lý do đằng sau mỗi câu trả lời $\to$ tăng tỉ lệ chấp nhận sử dụng.
+  \item \textbf{Giảm sai sót chẩn đoán:} Hệ thống từ chối khi không chắc chắn, thay vì trả lời sai $\to$ giảm dương tính giả/âm tính giả.
+  \item \textbf{Hỗ trợ đào tạo:} Chuỗi suy luận giúp bác sĩ trẻ học cách đọc X-quang có hệ thống.
+  \item \textbf{Giảm tải cho bác sĩ chẩn đoán hình ảnh:} Tự động hóa tầm soát sơ bộ, ưu tiên ca cần đọc kỹ.
+\end{itemize}
+
+\subsection{Thị trường mục tiêu}
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{l r l}
+\toprule
+\textbf{Phân khúc} & \textbf{Quy mô} & \textbf{Ghi chú} \\
+\midrule
+TAM (AI y khoa toàn cầu) & 20 tỉ USD (2027) & CAGR 38\% \\
+SAM (AI chẩn đoán hình ảnh) & 5 tỉ USD (2027) & X-quang ngực chiếm khoảng 30\% \\
+SOM (VQA có giải thích) & 200--500 triệu USD & Phân khúc mới, chưa có dẫn đầu \\
+\bottomrule
+\end{tabular}
+\caption{TAM--SAM--SOM ước tính}
+\end{table}
+
+\subsection{Ưu thế cạnh tranh}
+
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Rào cản kỹ thuật:} Tác tử VLM đi trên đồ thị bằng công cụ tất định + cổng xác minh --- khó sao chép nhanh so với tinh chỉnh LLM.
+  \item \textbf{Chi phí thấp:} Toàn bộ inference-only, không huấn luyện. Engine CPU + VLM 7B local $\to$ chi phí thấp hơn nhiều so với pipeline đa LLM lớn.
+  \item \textbf{Lợi thế pháp lý:} Đường đi trên đồ thị kiểm chứng được (trung thực nhân quả, vượt phép xóa) phù hợp yêu cầu \textbf{khả năng giải thích} của FDA và Đạo luật AI châu Âu.
+  \item \textbf{Người đi đầu trong ``VQA trung thực'':} Phân khúc này chưa có sản phẩm thương mại.
+\end{enumerate}
+
+\subsection{Mô hình giá trị}
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{B2B SaaS:} Tích hợp API vào hệ thống PACS/RIS bệnh viện $\to$ đăng ký theo số ca/tháng.
+  \item \textbf{B2B2C:} Cung cấp cho nền tảng y tế từ xa $\to$ tính phí theo lượt sử dụng.
+  \item \textbf{Cấp phép nghiên cứu:} Cấp phép engine + bản thể học cho nhóm nghiên cứu/dược phẩm.
+\end{itemize}
+
+% ============================================================================
+\section{Đánh giá và các chỉ số}
+% ============================================================================
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{l p{9cm}}
+\toprule
+\textbf{Chỉ số} & \textbf{Mô tả} \\
+\midrule
+EF@k & Đồ thị con suy luận so với vùng bằng chứng chuẩn (trung thực) \\
+Chính xác chọn lọc & Đường cong rủi ro--phạm vi: trả lời khi trung thực + từ chối \\
+Chính xác / F1 & So sánh với công trình trước (để đối chiếu) \\
+Chính xác liên kết & Chất lượng liên kết khái niệm (báo cáo riêng) \\
+Phạm vi bao phủ & Tỉ lệ câu hỏi bản thể học bao phủ được \\
+Tỉ lệ từ chối & Tỉ lệ từ chối trả lời (báo cáo minh bạch) \\
+Kiểm tra xóa & Xóa dữ kiện/cạnh trong chuỗi suy luận $\to$ câu trả lời phải đổi \\
+\bottomrule
+\end{tabular}
+\caption{Bộ chỉ số đánh giá}
+\end{table}
+
+\textbf{Năm thí nghiệm loại bỏ chính (quyết định tính thuyết phục):}
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{vs ReAct tuyến tính} (bỏ cây, giữ cùng action set) $\to$ cây phải tăng coverage Hạng A.
+  \item \textbf{vs LLM-value} (LATS gốc: value = self-eval) $\to$ verifier-as-value phải thắng EF + deletion.
+  \item \textbf{vs chỉ ký hiệu} (bỏ 3 visual action) $\to$ visual phải kéo accuracy (đặc biệt câu EvaX bỏ sót).
+  \item \textbf{vs không re\_detect} (giữ inspect/compare, bỏ re\_detect) $\to$ isolate hiệu quả vá perception.
+  \item \textbf{vs không verify-gate} (tất cả coi như Hạng A) $\to$ phân hạng phải cải thiện selective-accuracy.
+\end{enumerate}
+
+% ============================================================================
+\section{Rủi ro và giảm thiểu}
+% ============================================================================
+
+\begin{table}[H]
+\centering\small
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{p{3.2cm} p{4cm} p{5.5cm}}
+\toprule
+\textbf{Rủi ro} & \textbf{Tác động} & \textbf{Giảm thiểu} \\
+\midrule
+VLM 7B yếu ở tree search & Chọn sai nhánh, lãng phí budget & Cây + backtracking \emph{bù} cho planner yếu; verifier reward loại nhánh tồi sớm; reflection heuristic \\
+Visual action sinh fact sai & Perception mới fold vào graph sai & Fact thị giác phải nhất quán ontology (verifier kiểm); re\_detect qua EvaX (không phải VLM tự bịa) \\
+Kiểm tra xóa yếu cho bước thị giác & Claim faithful bị yếu & Cite vùng cụ thể; xóa vùng $\to$ re\_detect trả khác; evidence-traceable + nhân quả \\
+Không thắng baseline & Cây/đồ thị = overhead & Đo sớm; ablation từng thành phần; nếu thua $\to$ tăng DAG hoặc lai ghép \\
+Biên soạn không mở rộng & Lỗ hổng đầy đủ & Coverage\%; từ chối phần chưa bao phủ; Hạng B nhặt mở \\
+\bottomrule
+\end{tabular}
+\caption{Ma trận rủi ro (v4)}
+\end{table}
+
+% ============================================================================
+\section{Tóm tắt}
+% ============================================================================
+
+\begin{highlightbox}
+\textbf{KRONOS} giải quyết vấn đề cốt lõi của AI y khoa: \emph{làm sao biết AI đúng vì đúng lý do?}
+
+Bằng kiến trúc \textbf{verifier-guided multimodal tree search}, tác tử VLM tìm kiếm trên cây hành động \textbf{thị giác + ký hiệu}, dẫn bởi bộ xác minh tất định. Path thắng = trace bác sĩ audit được: ký hiệu sound, thị giác evidence-traceable, nhân quả (deletion test). \texttt{re\_detect} cho reasoning \textbf{vá lỗi perception} --- kéo cả accuracy.
+
+\textbf{Không huấn luyện} (EvaX + LLaVA-Med 7B đóng băng, engine CPU), dữ liệu công khai, từ chối có nguyên tắc --- sẵn sàng thí điểm VinDr-CXR-VQA trong 12 tuần. Nhắm MICCAI.
+\end{highlightbox}
+
+% ============================================================================
+\section*{Tài liệu tham khảo}
+\addcontentsline{toc}{section}{Tài liệu tham khảo}
+% ============================================================================
+
+\begin{enumerate}[leftmargin=1.5em, label={[\arabic*]}]
+  \item Arcuschin, L.\ et al.\ (2025). ``Chain-of-Thought Reasoning In The Wild Is Not Always Faithful.'' \textit{ICML 2025}. arXiv:2503.08679.
+
+  \item Huang, Y.\ et al.\ (2025). ``Evaluating Reasoning Faithfulness in Medical Vision-Language Models using Multimodal Perturbations.'' arXiv:2510.11196.
+
+  \item Turpin, M.\ et al.\ (2024). ``Language Models Don't Always Say What They Think: Unfaithful Explanations in Chain-of-Thought Prompting.'' \textit{NeurIPS 2024}.
+
+  \item Wang, Y.\ et al.\ (2025). ``MedReason: Eliciting Factual Medical Reasoning Steps in LLMs via Knowledge Graphs.'' arXiv:2504.00993.
+
+  \item Bellomarini, L.\ et al.\ (2024). ``Neurosymbolic AI for Reasoning over Knowledge Graphs: A Survey.'' \textit{IEEE TNNLS}.\ arXiv:2302.07200.
+
+  \item Liu, B.\ et al.\ (2025). ``GEMeX: A Large-Scale, Groundable, and Explainable Medical VQA Benchmark for Chest X-ray Diagnosis.'' \textit{ICCV 2025}. arXiv:2411.16778.
+
+  \item Reiter, R.\ (1978). ``On Closed World Data Bases.'' \textit{Logic and Data Bases}, Springer, pp.\ 55--76.
+
+  \item Li, Z.\ et al.\ (2025). ``VERGE: Formal Refinement and Guidance Engine for Verifiable LLM Reasoning.'' arXiv:2601.20055.
+
+  \item Li, C.\ et al.\ (2024). ``LLaVA-Med: Training a Large Language-and-Vision Assistant for Biomedicine in One Day.'' \textit{NeurIPS 2024}.
+
+  \item Zhang, S.\ et al.\ (2024). ``BiomedCLIP: A Multimodal Biomedical Foundation Model Pretrained from Fifteen Million Scientific Image-Text Pairs.'' \textit{Nature Medicine}.
+
+  \item Yao, S.\ et al.\ (2023). ``ReAct: Synergizing Reasoning and Acting in Language Models.'' \textit{ICLR 2023}. arXiv:2210.03629.
+
+  \item Chen, L.\ et al.\ (2024). ``Plan-on-Graph: Self-Correcting Adaptive Planning of Large Language Model on Knowledge Graphs.'' arXiv:2410.23875.
+
+  \item Park, S.\ et al.\ (2024). ``EvaX: A Foundation Model for General Chest X-ray Analysis with Self-supervised Learning.'' arXiv:2405.xxxxx.
+
+  \item Zhou, A.\ et al.\ (2024). ``Language Agent Tree Search Unifies Reasoning Acting and Planning in Language Models.'' \textit{ICML 2024}. arXiv:2310.04406.
+\end{enumerate}
+
+\end{document}
