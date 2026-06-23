@@ -10,3 +10,5 @@ data/vindr_cxr_vqa/train/
 data/rag/
 # Large source ontologies — reproduce the KG via scripts/build_kg.py
 data/*.owl
+# Generated eval reports
+results/
