@@ -62,9 +62,10 @@ def test_pipeline_negation_absent(dag):
         facts=facts,
         dag=dag,
     )
-    # Consolidation not in facts, but this is existential (not negation) → no witness → ABSTAIN
-    # The mock agent tries is_a(cardiomegaly, consolidation) which fails
-    assert result.tier in ("A", "ABSTAIN")
+    # Consolidation not in facts; existential (not negation). The agent checks
+    # is_a(cardiomegaly, consolidation), fails, then concludes closed-world "No".
+    assert result.tier == "A"
+    assert result.answer == "No"
 
 
 def test_pipeline_returns_search_result(dag):

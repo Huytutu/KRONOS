@@ -5,7 +5,7 @@ from src.contracts import PerceptualFact
 class Detector:
     """YOLOv12s wrapper — runs inference on CXR images, returns PerceptualFact list."""
 
-    def __init__(self, weights_path, dag=None, conf_threshold=0.25):
+    def __init__(self, weights_path, dag=None, conf_threshold=0.3):
         self.model = YOLO(weights_path)
         self.dag = dag
         self.conf_threshold = conf_threshold

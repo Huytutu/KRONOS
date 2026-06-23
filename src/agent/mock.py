@@ -25,24 +25,31 @@ class MockAgent:
         return []
 
     def _existential(self, node, query, k):
-        results = []
         target_slug = slugify(query.target) or "unknown"
+        checked = {
+            a.args.get("node")
+            for a, _ in node.history
+            if a.tool == "is_a"
+        }
 
+        results = []
         for fact in node.state_facts:
             slug = slugify(fact.concept)
-            results.append(Action(
-                tool="is_a",
-                args={"node": slug, "target": target_slug},
-            ))
-            if len(results) >= k:
-                break
+            if slug not in checked:
+                results.append(Action(
+                    tool="is_a",
+                    args={"node": slug, "target": target_slug},
+                ))
+                if len(results) >= k:
+                    break
 
-        if not results:
-            results.append(Action(
-                tool="is_a",
-                args={"node": "unknown", "target": target_slug},
-            ))
-        return results
+        if results:
+            return results
+
+        # Every finding has been checked against the target and none is-a it.
+        # Under the closed-world assumption (perception is exhaustive), the
+        # target is absent → answer "No". The verifier re-confirms on the DAG.
+        return ["No"]
 
     def _negation(self, node, query, k):
         has_exclusion = any(
@@ -85,27 +92,23 @@ class MockAgent:
 
     def _relational(self, node, query, k):
         attr = query.constraints.get("attr", "location")
-        results = []
+        tool = "compose_laterality" if attr == "laterality" else "anatomy_of"
 
-        for fact in node.state_facts:
-            if slugify(fact.concept) == slugify(query.target):
-                bbox = list(fact.bbox)
-                if attr == "laterality":
-                    results.append(Action(
-                        tool="compose_laterality", args={"bbox": bbox},
-                    ))
-                else:
-                    results.append(Action(
-                        tool="anatomy_of", args={"bbox": bbox},
-                    ))
-                break
+        fact = self._fact_to_localize(node, query)
+        if fact is None:
+            return []
+        return [Action(tool=tool, args={"bbox": list(fact.bbox)})]
 
-        if not results:
-            results.append(Action(
-                tool="anatomy_of",
-                args={"bbox": [0, 0, 100, 100]},
-            ))
-        return results
+    def _fact_to_localize(self, node, query):
+        """Finding whose location we report. Match the named target, or fall
+        back to the first finding when the question names none (e.g.
+        'Which side shows the abnormality?', where target is None)."""
+        if query.target:
+            for fact in node.state_facts:
+                if slugify(fact.concept) == slugify(query.target):
+                    return fact
+            return None
+        return node.state_facts[0] if node.state_facts else None
 
     def _counting(self, node, query, k):
         count = len({f.concept for f in node.state_facts})

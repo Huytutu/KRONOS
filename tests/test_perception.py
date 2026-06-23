@@ -3,7 +3,7 @@
 import pytest
 from src.contracts import PerceptualFact
 
-WEIGHTS_PATH = "weights/yolo_best.pt"
+WEIGHTS_PATH = "weights/yolov12s_vindr.pt"
 TRAIN_CSV = "data/vindr_cxr_vqa/train.csv"
 TRAIN_DIR = "data/vindr_cxr_vqa/train"
 DAG_PATH = "data/ontology/dag.yaml"

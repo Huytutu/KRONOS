@@ -20,7 +20,7 @@ GOLD_TO_QTYPE = {
     "Yes_No": "existential",
     "Where": "relational",
     "Which": "relational",
-    "What": "existential",
+    "What": "open",
     "How_many": "counting",
 }
 

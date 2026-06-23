@@ -63,6 +63,13 @@ def _verify_existential(node, query, dag):
         return SearchResult(
             answer=node.answer or "Yes", tier="A", path=path, conf=_min_conf(node),
         )
+    # Closed-world absence: if the target is a known concept and no detected
+    # finding is (or is-a) the target, "No" is a verified answer, not a guess.
+    target_id = _resolve_target(query, dag)
+    if target_id and not _any_fact_is_a(node, target_id, dag):
+        return SearchResult(
+            answer=node.answer or "No", tier="A", path=path, conf=_min_conf(node),
+        )
     return SearchResult(answer=node.answer or "", tier="ABSTAIN", path=path, conf=0.0)
 
 
@@ -152,6 +159,23 @@ def _has_direct_match(node, query, dag):
         return False
     target_slug = dag.resolve_slug(query.target)
     return any(dag.resolve_slug(f.concept) == target_slug for f in node.state_facts)
+
+
+def _resolve_target(query, dag):
+    """Resolve query target to a DAG node id, or None if not in the graph."""
+    if not query.target:
+        return None
+    node_id = dag.resolve_slug(query.target)
+    return node_id if dag.get_node(node_id) else None
+
+
+def _any_fact_is_a(node, target_id, dag):
+    """True if any detected finding is, or is-a, the target."""
+    for f in node.state_facts:
+        fid = dag.resolve_slug(f.concept)
+        if fid == target_id or dag.reachable_is_a(fid, target_id):
+            return True
+    return False
 
 
 def _has_disjoint_violation(node):

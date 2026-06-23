@@ -50,12 +50,14 @@ def test_existential_2hop(dag, agent):
 
 
 def test_existential_no_witness(dag, agent):
-    """Cardiomegaly fact, query target=pulmonary_abnormality → no witness → ABSTAIN."""
+    """Cardiomegaly fact, query target=pulmonary_abnormality → no witness, but
+    pulmonary_abnormality is a known concept absent from facts → Tier A "No"."""
     from src.search.tree_search import search
     facts = [_fact("Cardiomegaly")]
     query = _query("existential", target="pulmonary_abnormality")
     result = search(query, facts, dag, agent)
-    assert result.tier == "ABSTAIN"
+    assert result.tier == "A"
+    assert result.answer == "No"
 
 
 def test_negation_absent(dag, agent):

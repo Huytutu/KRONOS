@@ -32,7 +32,10 @@ class QuestionParser:
         elif "which side" in q:
             qtype, target, constraints, conf = "relational", None, {"attr": "laterality"}, 1.0
         elif "what abnormality" in q or "what finding" in q:
-            qtype, target, constraints, conf = "existential", None, {"scope": "open"}, 1.0
+            # Free-text descriptive question → open (served as advisory Tier B),
+            # not existential. Existential with no target can never find a
+            # witness, so it would always abstain.
+            qtype, target, constraints, conf = "open", None, {}, 1.0
         elif "is there" in q or ("does" in q and "show" in q):
             qtype, target, constraints, conf = "existential", target, {}, 1.0
         else:

@@ -51,9 +51,9 @@ class TestWhichSideTemplate:
 class TestWhatTemplate:
     def test_what_abnormality(self, parser):
         q = parser.parse("What abnormality is visible?")
-        assert q.type == "existential"
+        assert q.type == "open"
         assert q.target is None
-        assert q.constraints == {"scope": "open"}
+        assert q.constraints == {}
 
 
 class TestHowManyTemplate:
