@@ -34,4 +34,14 @@ def run_tool(action, facts, dag, img_wh):
             return Observation(result=lst, ok=True)
         return Observation(result=None, ok=False)
 
+    if tool == "neighbors":
+        result = dag.causal_neighbors(args["node"], args.get("direction", "caused_by"))
+        return Observation(result=result, ok=bool(result))
+
+    if tool == "find_path":
+        path = dag.find_causal_path(args["source"], args["target"])
+        if path:
+            return Observation(result=path, ok=True)
+        return Observation(result=None, ok=False)
+
     return Observation(result=None, ok=False)

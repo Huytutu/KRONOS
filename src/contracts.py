@@ -8,6 +8,7 @@ Tier = Literal["A", "B", "ABSTAIN"]
 ToolName = Literal[
     "is_a", "disjoint", "anatomy_of", "compose_laterality",
     "get_exclusion_list", "retrieve",
+    "neighbors", "find_path",
     "inspect", "re_detect", "compare",
 ]
 

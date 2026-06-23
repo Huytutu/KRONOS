@@ -1,0 +1,88 @@
+- finding: Aortic enlargement
+  rid: RID34873
+  rgo_id: rgo:33477
+  rgo_label: aortic dilatation
+  method: synonym
+  matched_via: aortic dilatation
+  status: auto
+- finding: Atelectasis
+  rid: RID28493
+  rgo_id: rgo:15792
+  rgo_label: atelectasis
+  method: rid
+  status: auto
+- finding: Calcification
+  rid: RID5196
+  rgo_id: rgo:04869
+  rgo_label: calcification
+  method: rid
+  status: auto
+- finding: Cardiomegaly
+  rid: RID1392
+  rgo_id: rgo:22537
+  rgo_label: cardiomegaly
+  method: label
+  status: auto
+- finding: Consolidation
+  rid: RID43255
+  rgo_id: null
+  status: observation-only
+  note: RGO has no generic consolidation node; all 5 'consolidation' nodes are specific
+    subtypes (lobar/segmental/chronic/unilateral) sitting directly under the root.
+    No faithful generic match -> observation-only.
+- finding: ILD
+  rid: RID4864
+  rgo_id: rgo:34869
+  rgo_label: interstitial lung disease
+  method: synonym
+  matched_via: interstitial lung disease
+  status: auto
+- finding: Infiltration
+  rid: RID28825
+  rgo_id: null
+  status: observation-only
+  note: RGO has no generic pulmonary infiltrate; all 'infiltrat*' nodes are non-pulmonary
+    (leukemic/fatty/carcinomatous). -> observation-only.
+- finding: Lung Opacity
+  rid: RID28530
+  rgo_id: rgo:32683
+  rgo_label: pulmonary opacity
+  method: synonym
+  matched_via: pulmonary opacity
+  status: auto
+- finding: Nodule/Mass
+  rid: RID3875
+  rgo_id: rgo:03705
+  rgo_label: pulmonary mass
+  method: synonym
+  matched_via: pulmonary mass
+  status: auto
+- finding: Other lesion
+  rid: null
+  rgo_id: null
+  status: observation-only
+  note: VinDr catch-all grouping label, not a pathological entity. -> observation-only.
+- finding: Pleural effusion
+  rid: RID34539
+  rgo_id: rgo:03688
+  rgo_label: pleural effusion
+  method: rid
+  status: auto
+- finding: Pleural thickening
+  rid: RID34771
+  rgo_id: rgo:15999
+  rgo_label: pleural thickening
+  method: label
+  status: auto
+- finding: Pneumothorax
+  rid: RID5352
+  rgo_id: rgo:23339
+  rgo_label: pneumothorax
+  method: rid
+  status: auto
+- finding: Pulmonary fibrosis
+  rid: RID4737
+  rgo_id: rgo:21475
+  rgo_label: pulmonary fibrosis
+  method: label
+  status: auto

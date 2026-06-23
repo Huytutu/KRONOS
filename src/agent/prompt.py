@@ -46,6 +46,8 @@ TOOL_DESCRIPTIONS = """Available tools:
 - anatomy_of(bbox): map bounding box to anatomy zone (returns zone name)
 - compose_laterality(bbox): determine left/right/bilateral/midline from bbox position
 - get_exclusion_list(name): get closed-world exclusion list for negation check
+- neighbors(node, direction): concepts linked on the may_cause graph; direction 'caused_by' (causes of node) or 'causes' (effects of node)
+- find_path(source, target): shortest may_cause chain source -> target (multi-hop causal rationale), or None
 - retrieve(image_emb, k): retrieve top-k similar cases
 - inspect(bbox): zoom into image region, describe finding (visual)
 - re_detect(bbox): run detector on sub-region to find missed findings (visual)
@@ -108,7 +110,8 @@ def parse_output(raw):
 
 VALID_TOOLS = {
     "is_a", "disjoint", "anatomy_of", "compose_laterality",
-    "get_exclusion_list", "retrieve", "inspect", "re_detect", "compare",
+    "get_exclusion_list", "retrieve", "neighbors", "find_path",
+    "inspect", "re_detect", "compare",
 }
 
 

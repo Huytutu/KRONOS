@@ -1,3 +1,4 @@
+from pathlib import Path
 import yaml
 import networkx as nx
 
@@ -16,7 +17,8 @@ class OntologyDAG:
     subsumption (is-a), disjointness, anatomy mapping, laterality composition.
     """
 
-    def __init__(self, dag_path, exclusion_path=None, zones_path=None):
+    def __init__(self, dag_path, exclusion_path=None, zones_path=None,
+                 causal_path=None):
         with open(dag_path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
@@ -53,6 +55,28 @@ class OntologyDAG:
         if zones_path:
             with open(zones_path, encoding="utf-8") as f:
                 self._zones = yaml.safe_load(f)
+
+        # Load the RGO may_cause subgraph. Defaults to the sibling causal_kg.yaml
+        # so every caller gets multi-hop ops without changing its construction.
+        self.causal = None
+        self._seed_to_rgo = {}
+        self._label_to_rgo = {}
+        if causal_path is None:
+            sibling = Path(dag_path).with_name("causal_kg.yaml")
+            causal_path = str(sibling) if sibling.exists() else None
+        if causal_path:
+            self._load_causal(causal_path)
+
+    def _load_causal(self, path):
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        self.causal = nx.DiGraph()
+        for node in data["nodes"]:
+            self.causal.add_node(node["id"], label=node["label"], role=node.get("role"))
+            self._label_to_rgo.setdefault(node["label"], node["id"])
+        for edge in data["edges"]:
+            self.causal.add_edge(edge["source"], edge["target"])
+        self._seed_to_rgo = dict(data.get("seeds", {}))
 
     # --- helpers ---
 
@@ -125,6 +149,51 @@ class OntologyDAG:
             if self.graph.edges[b, a].get("relation") == "disjoint-with":
                 return True
         return False
+
+    # --- Role 5: causal (may_cause) multi-hop reasoning ---
+
+    def _resolve_rgo(self, name):
+        """Finding name / RGO label / RGO id -> RGO id in the causal graph, or None."""
+        if self.causal is None or not name:
+            return None
+        if name in self._seed_to_rgo:           # VinDr finding name
+            return self._seed_to_rgo[name]
+        if name.lower() in self._label_to_rgo:  # RGO concept label
+            return self._label_to_rgo[name.lower()]
+        if name in self.causal:                 # already an RGO id
+            return name
+        return None
+
+    def causal_neighbors(self, name, direction="caused_by"):
+        """Concepts linked to `name` on the may_cause graph, as a list of labels.
+
+        direction='caused_by' -> things that may cause it (predecessors);
+        direction='causes'    -> things it may cause (successors).
+        """
+        node = self._resolve_rgo(name)
+        if node is None:
+            return []
+        ids = (self.causal.successors(node) if direction == "causes"
+               else self.causal.predecessors(node))
+        return [self.causal.nodes[i]["label"] for i in ids]
+
+    def find_causal_path(self, source, target):
+        """Shortest directed may_cause path source -> ... -> target as a list of
+        labels, or None. Among equally short paths, prefer ones routed through
+        disorder nodes (more clinically meaningful)."""
+        a = self._resolve_rgo(source)
+        b = self._resolve_rgo(target)
+        if a is None or b is None or not nx.has_path(self.causal, a, b):
+            return None
+
+        best, best_disorders = None, -1
+        for path in nx.all_shortest_paths(self.causal, a, b):
+            disorders = sum(
+                1 for n in path[1:-1] if self.causal.nodes[n].get("role") == "disorder"
+            )
+            if disorders > best_disorders:
+                best, best_disorders = path, disorders
+        return [self.causal.nodes[n]["label"] for n in best]
 
     # --- closed-world negation support ---
 
