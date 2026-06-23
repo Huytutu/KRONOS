@@ -53,6 +53,15 @@ class MedGemmaAgent:
 
         return parse_output(raw)
 
+    def generate(self, prompt, image=None):
+        """Free-form greedy generation on prompt (+ optional image). Used by the
+        multi-hop eval predictors. Honors an injected _inference_fn for testing."""
+        if image is not None:
+            self._image = image
+        if self._inference_fn:
+            return self._inference_fn(prompt, self._image)
+        return self._run_model(prompt)
+
     def _run_model(self, prompt):
         if not self._model or not self._processor:
             return ""

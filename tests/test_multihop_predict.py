@@ -93,3 +93,61 @@ def test_build_sc_prompt_modes():
 def test_parse_yes_no_cause(text, expected):
     from src.eval.predictors import parse_yes_no_cause
     assert parse_yes_no_cause(text) == expected
+
+
+# --- model predictors (gen injected; no GPU) ---
+
+class _FakeGen:
+    """Returns canned responses in order; repeats the last one."""
+    def __init__(self, *responses):
+        self.responses = list(responses)
+        self.calls = 0
+
+    def __call__(self, prompt, image=None):
+        r = self.responses[min(self.calls, len(self.responses) - 1)]
+        self.calls += 1
+        return r
+
+
+def test_zero_shot_no_trace(dag):
+    from src.eval.predictors import predict_zero_shot
+    p = predict_zero_shot(_yes_item(), _FakeGen("Yes, sarcoidosis"))
+    assert p == {"answer": "Yes", "cause": "sarcoidosis", "trace": []}
+
+
+def test_kronos_accepts_valid_model_cause(dag):
+    from src.eval.predictors import predict_kronos
+    p = predict_kronos(_yes_item(), dag, _FakeGen("Yes, sarcoidosis"))
+    assert p["answer"] == "Yes" and p["cause"] == "sarcoidosis"
+    assert all(dag.causal_edge(s, t) for s, t in p["trace"])
+
+
+def test_kronos_falls_back_to_graph_when_model_wrong(dag):
+    from src.eval.predictors import predict_kronos
+    gen = _FakeGen("Yes, madeupitis", "Yes, madeupitis")
+    p = predict_kronos(_yes_item(), dag, gen)
+    assert p["answer"] == "Yes"
+    assert p["cause"] in dag.common_causes("Pleural thickening", "Pneumothorax")
+    assert all(dag.causal_edge(s, t) for s, t in p["trace"])
+
+
+def test_kronos_single_hop_only_says_no_without_valid_proposal(dag):
+    from src.eval.predictors import predict_kronos
+    gen = _FakeGen("Yes, madeupitis", "Yes, madeupitis")
+    p = predict_kronos(_yes_item(), dag, gen, multi_hop=False)
+    assert p["answer"] == "No"
+
+
+def test_kronos_no_reflection_single_model_call(dag):
+    from src.eval.predictors import predict_kronos
+    gen = _FakeGen("Yes, madeupitis", "Yes, sarcoidosis")
+    p = predict_kronos(_yes_item(), dag, gen, reflection=False)
+    assert gen.calls == 1            # no second (reflective) attempt
+    assert p["answer"] == "Yes"      # graph fallback still finds a real cause
+
+
+def test_react_no_gate_can_hallucinate(dag):
+    from src.eval.predictors import predict_react
+    p = predict_react(_yes_item(), dag, _FakeGen("Yes, madeupitis"))
+    assert p["answer"] == "Yes" and p["cause"] == "madeupitis"
+    assert p["trace"] == []          # unverified -> graded as hallucination
