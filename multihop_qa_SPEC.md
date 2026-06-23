@@ -81,12 +81,15 @@ Per the parent spec's faithfulness-first metric set:
 ## 6. Build script (user implements) — `scripts/build_multihop_qa.py`
 
 ```
-python scripts/build_multihop_qa.py --split test --n 300 --seed 0 \
-       --out data/multihop_qa/test.jsonl
+python scripts/build_multihop_qa.py --n 300 --seed 0 \
+       --out data/multihop_qa/qa.jsonl
 ```
 
+Grounded on the VinDr **train** split: `test.csv` has no finding labels (hidden), `train.csv`
+does. The model is frozen (nothing trained), so train images are leak-free eval data.
+
 Algorithm:
-1. Load VinDr test annotations → per image, the set of present findings ∩ the 11 mapped findings.
+1. Load `train.csv` → per image, the set of present findings ∩ the 11 mapped findings.
 2. Load `OntologyDAG` (auto-loads `causal_kg.yaml`); use causal predecessors for `common_causes`.
 3. For each image, for each unordered finding pair → build a candidate item (Yes/No + support).
 4. Split candidates into Yes / No pools; **stratified-sample** to ~n, ~50/50, fixed seed.
@@ -109,9 +112,9 @@ intersect two findings' cause-sets for `common_causes`.
 
 ## 8. Open checks before/at build
 
-- **Feasibility count:** 15/55 finding-pairs have a common cause; confirm the test split yields
-  ≥150 Yes and ≥150 No (image, pair) instances. If Yes is short, allow >1 image per pair.
-- **VinDr annotation source:** confirm the exact test-split label file/format the script reads.
+- **Feasibility count:** ✅ resolved — train split yields 1109 Yes / 16568 No candidates;
+  generated 150/150 balanced, 117 single-cause Yes (deletion test holds on all 117).
+- **VinDr annotation source:** ✅ resolved — `train.csv` (test labels are hidden).
 - **Name grading:** finalize the synonym set per gold disorder (reuse RGO labels; extend if needed).
 
 ## 9. Acceptance criteria (definition of done for the data)
