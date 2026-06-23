@@ -195,6 +195,14 @@ class OntologyDAG:
                 best, best_disorders = path, disorders
         return [self.causal.nodes[n]["label"] for n in best]
 
+    def causal_edge(self, src, tgt):
+        """True if src may_cause tgt (each given by finding name, RGO label, or id)."""
+        if self.causal is None:
+            return False
+        a = self._resolve_rgo(src)
+        b = self._resolve_rgo(tgt)
+        return a is not None and b is not None and self.causal.has_edge(a, b)
+
     # --- closed-world negation support ---
 
     def get_exclusion_list(self, finding_name):
