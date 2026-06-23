@@ -21,11 +21,15 @@ class CXREncoder:
 
 
 def load_encoder(model_path=DEFAULT_MODEL_PATH, device="cuda"):
+    import os
     import torch
     import open_clip
 
+    prefix = "local-dir:" if os.path.exists(model_path) else "hf-hub:"
+
     model, preprocess = open_clip.create_model_from_pretrained(
-        "hf-hub:" + model_path, device=device,
+        prefix + model_path, device=device,
     )
     model.eval()
     return CXREncoder(model, preprocess, device)
+

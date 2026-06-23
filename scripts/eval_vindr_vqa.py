@@ -221,14 +221,16 @@ def print_report(metrics):
 
 # --- Generate results by running KRONOS pipeline ---
 
-def generate_results(vqa_path, weights_path, dag_dir="data/ontology"):
-    """Run KRONOS on all VQA questions and return results list."""
+def generate_results(vqa_path, weights_path, dag_dir="data/ontology", use_real=False, limit=None):
+    """Run KRONOS on all VQA questions and return results list.
+
+    limit: if set, only process the first N images (for quick test runs).
+    """
     import sys
     sys.path.insert(0, ".")
     from src.pipeline import run, VINDR_FINDINGS
     from src.perception.detector import Detector
     from src.ontology.dag import OntologyDAG
-    from src.agent.mock import MockAgent
     from pathlib import Path
 
     # All three files are required: dag.yaml alone leaves exclusion lists and
@@ -239,12 +241,45 @@ def generate_results(vqa_path, weights_path, dag_dir="data/ontology"):
         f"{dag_dir}/anatomy_zones.yaml",
     )
     detector = Detector(weights_path, dag=dag)
-    agent = MockAgent()
+
+    if use_real:
+        from src.agent.medgemma import MedGemmaAgent
+        from src.retrieval.index import RagIndex
+        from src.retrieval.retriever import Retriever
+        from src.retrieval.encoder import load_encoder
+
+        print("Loading real MedGemma Agent (quantized to 4-bit)...")
+        agent = MedGemmaAgent(model_path="weights/medgemma-4b-it", quantize=True, load_model=True)
+
+        # Initialize retriever if RAG index and cases files exist
+        cases_path = Path("data/rag/vindr_cases.jsonl")
+        index_path = Path("data/rag/vindr_index.faiss")
+        if cases_path.exists() and index_path.exists():
+            print("Loading real RAG index and BiomedCLIP encoder...")
+            with open(cases_path, "r", encoding="utf-8") as f:
+                cases = [json.loads(line) for line in f]
+            index = RagIndex.load(index_path, cases)
+            encoder = load_encoder(model_path="weights/BiomedCLIP", device="cuda")
+            retriever = Retriever(index=index, encoder=encoder)
+            print("RAG index loaded successfully.")
+        else:
+            retriever = None
+            print("RAG index files not found. Running without retriever.")
+    else:
+        from src.agent.mock import MockAgent
+        agent = MockAgent()
+        retriever = None
 
     with open(vqa_path, "r", encoding="utf-8") as f:
         dataset = json.load(f)
 
+    if limit:
+        dataset = dataset[:limit]
+
     results = []
+    n_a = n_b = n_abs = 0
+    total_images = len(dataset)
+
     for i, item in enumerate(dataset):
         image_id = item["image_id"]
         image_path = Path("data/vindr_cxr_vqa/train") / f"{image_id}.png"
@@ -256,12 +291,18 @@ def generate_results(vqa_path, weights_path, dag_dir="data/ontology"):
         for qa in item["vqa"]:
             try:
                 result = run(
-                    str(image_path), qa["question"], dag, detector, agent
+                    str(image_path), qa["question"], dag, detector, agent, retriever=retriever
                 )
             except Exception as e:
                 result = None
 
-            gold = extract_yes_no(qa["answer"]) or qa["answer"]
+            tier = result.tier if result else "ABSTAIN"
+            if tier == "A":
+                n_a += 1
+            elif tier == "B":
+                n_b += 1
+            else:
+                n_abs += 1
 
             results.append({
                 "image_id": image_id,
@@ -269,14 +310,16 @@ def generate_results(vqa_path, weights_path, dag_dir="data/ontology"):
                 "type": qa["type"],
                 "gold_answer": qa["answer"],
                 "pred_answer": result.answer if result else "",
-                "tier": result.tier if result else "ABSTAIN",
+                "tier": tier,
                 "pred_conf": result.conf if result else 0.0,
                 "gt_finding": qa["gt_finding"],
                 "gt_location": qa["gt_location"],
             })
 
-        if (i + 1) % 100 == 0:
-            print(f"  processed {i+1}/{len(dataset)} images...")
+        print(f"\r  [{i+1}/{total_images}] questions={len(results)}  "
+              f"A={n_a} B={n_b} ABSTAIN={n_abs}", end="", flush=True)
+
+    print()
 
     return results
 
@@ -285,16 +328,18 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate KRONOS on VinDr-CXR-VQA")
     parser.add_argument("--results", type=str, help="Path to results.jsonl (pre-computed)")
     parser.add_argument("--run", action="store_true", help="Run pipeline on dataset")
+    parser.add_argument("--use-real", action="store_true", help="Use real MedGemma agent and BiomedCLIP retriever")
     parser.add_argument("--weights", type=str, default="weights/yolov12s_vindr.pt")
     parser.add_argument("--vqa", type=str, default="data/vindr_cxr_vqa/vqa.json")
-    parser.add_argument("--output", type=str, default="results.jsonl")
+    parser.add_argument("--output", type=str, default="results/results.jsonl")
+    parser.add_argument("--limit", type=int, default=None, help="Only process first N images (quick test)")
     args = parser.parse_args()
 
     if args.results:
         with open(args.results, "r") as f:
             results = [json.loads(line) for line in f]
     elif args.run:
-        results = generate_results(args.vqa, args.weights)
+        results = generate_results(args.vqa, args.weights, use_real=args.use_real, limit=args.limit)
         with open(args.output, "w") as f:
             for r in results:
                 f.write(json.dumps(r, ensure_ascii=False) + "\n")
@@ -304,3 +349,4 @@ if __name__ == "__main__":
 
     metrics = compute_metrics(results)
     print_report(metrics)
+

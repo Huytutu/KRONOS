@@ -1,10 +1,10 @@
 """Build FAISS index + cases.jsonl from VinDr-CXR train split.
 
 Usage:
-    python scripts/build_rag_index.py \
-        --vqa data/vindr_cxr_vqa/vqa.json \
-        --images data/vindr_cxr_vqa/train \
-        --out-index data/rag/vindr_index.faiss \
+    python scripts/build_rag_index.py `
+        --vqa data/vindr_cxr_vqa/vqa.json `
+        --images data/vindr_cxr_vqa/train `
+        --out-index data/rag/vindr_index.faiss `
         --out-cases data/rag/vindr_cases.jsonl
 """
 import argparse

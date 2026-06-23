@@ -106,6 +106,12 @@ def parse_output(raw):
     return []
 
 
+VALID_TOOLS = {
+    "is_a", "disjoint", "anatomy_of", "compose_laterality",
+    "get_exclusion_list", "retrieve", "inspect", "re_detect", "compare",
+}
+
+
 def _parse_action_array(text):
     try:
         parsed = json.loads(text)
@@ -116,7 +122,7 @@ def _parse_action_array(text):
 
     actions = []
     for item in parsed:
-        if isinstance(item, dict) and "tool" in item:
+        if isinstance(item, dict) and "tool" in item and item["tool"] in VALID_TOOLS:
             kind = "visual" if item["tool"] in VISUAL_TOOLS else "symbolic"
             actions.append(Action(tool=item["tool"], args=item.get("args", {}), kind=kind))
     return actions

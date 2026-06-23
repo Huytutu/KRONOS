@@ -58,14 +58,17 @@ class MedGemmaAgent:
             return ""
         import torch
 
+        # Gemma3 needs the chat template to place the <start_of_image> token;
+        # passing raw text + image to the processor fails ("0 image tokens").
+        content = [{"type": "text", "text": prompt}]
         if self._image is not None:
-            inputs = self._processor(
-                text=prompt, images=self._image, return_tensors="pt",
-            ).to(self._model.device)
-        else:
-            inputs = self._processor(
-                text=prompt, return_tensors="pt",
-            ).to(self._model.device)
+            content.insert(0, {"type": "image", "image": self._image})
+        messages = [{"role": "user", "content": content}]
+
+        inputs = self._processor.apply_chat_template(
+            messages, add_generation_prompt=True, tokenize=True,
+            return_dict=True, return_tensors="pt",
+        ).to(self._model.device)
 
         input_len = inputs["input_ids"].shape[-1]
         with torch.no_grad():

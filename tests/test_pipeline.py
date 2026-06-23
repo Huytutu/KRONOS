@@ -78,3 +78,37 @@ def test_pipeline_returns_search_result(dag):
     )
     assert isinstance(result, SearchResult)
     assert result.tier in ("A", "B", "ABSTAIN")
+
+
+class _FakeDetector:
+    def detect(self, image_path):
+        return _oracle_facts()
+
+
+class _FakeEncoder:
+    def encode(self, image):
+        import numpy as np
+        return np.ones(4, dtype="float32")
+
+
+def test_run_sets_retriever_query_emb(dag, tmp_path):
+    """run() must give the retriever the image embedding, else retrieve is inert."""
+    import numpy as np
+    from PIL import Image
+    from src.pipeline import run
+    from src.agent.mock import MockAgent
+    from src.retrieval.index import BruteForceIndex
+    from src.retrieval.retriever import Retriever
+
+    index = BruteForceIndex(np.ones((2, 4), dtype="float32"),
+                            [{"case_id": "a"}, {"case_id": "b"}])
+    retriever = Retriever(index, encoder=_FakeEncoder())
+    assert retriever.query_emb is None
+
+    image_path = tmp_path / "x.png"
+    Image.new("RGB", (32, 32)).save(image_path)
+
+    run(str(image_path), "How many findings are there?", dag,
+        _FakeDetector(), MockAgent(), retriever=retriever)
+
+    assert retriever.query_emb is not None

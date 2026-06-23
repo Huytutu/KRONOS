@@ -42,6 +42,12 @@ def run(image_path, question, dag, detector, agent, budget=20, k=3, retriever=No
     if hasattr(agent, "set_image"):
         agent.set_image(image)
 
+    # Give the retriever this image's embedding so the retrieve tool can find
+    # similar cases; without it retriever.query_emb stays None and retrieve
+    # returns nothing.
+    if retriever is not None and getattr(retriever, "encoder", None) is not None:
+        retriever.set_query_emb(retriever.encoder.encode(image))
+
     vlm_fn = None
     detector_fn = None
     if hasattr(agent, "_inference_fn") and agent._inference_fn:
