@@ -9,7 +9,7 @@ implicit backtracking via the frontier.
 from src.contracts import Action, Observation, TreeNode, SearchResult, Query, PerceptualFact
 from src.tools.dispatch import run_tool
 from src.tools.visual import fold_facts
-from src.engine.verifier import closure_progress, verify
+from src.engine.verifier import closure_progress, verify, explain
 from src.ontology.dag import slugify
 
 DEFAULT_IMG_WH = (2304, 2880)
@@ -33,6 +33,7 @@ def search(query, facts, dag, agent, budget=20, k=3, img_wh=None,
         nodes_expanded += 1
 
         proposals = agent.propose_actions(node, query, k)
+        reflected = False
 
         for proposal in proposals:
             if isinstance(proposal, str):
@@ -45,6 +46,12 @@ def search(query, facts, dag, agent, budget=20, k=3, img_wh=None,
                     return result
                 if result.tier == "B" and best_tier_b is None:
                     best_tier_b = result
+                # Verifier rejected the model's answer. Re-queue this state once,
+                # carrying the reason, so the agent can revise instead of repeating.
+                if result.tier in ("B", "ABSTAIN") and not node.reflection and not reflected:
+                    retry = node.model_copy(update={"reflection": explain(child, query, dag)})
+                    frontier.append(retry)
+                    reflected = True
                 continue
 
             obs = run_tool(proposal, node.state_facts, dag, img_wh,

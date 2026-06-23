@@ -132,3 +132,43 @@ def test_deletion_flips_answer(dag, agent):
 
     assert result_with.tier == "A"
     assert result_without.tier != "A" or result_without.answer != result_with.answer
+
+
+# --- reflection loop: verifier reason is fed back to the agent ---
+
+class _ReflectionSpyAgent:
+    """Always answers unverifiably; records the reflection on every node it sees."""
+
+    def __init__(self):
+        self.seen_reflections = []
+
+    def propose_actions(self, node, query, k=3):
+        self.seen_reflections.append(node.reflection)
+        return ["Yes"]
+
+
+def test_reflection_surfaced_to_agent(dag):
+    """An unverified answer (Tier B) re-queues the state with a reason the agent reads."""
+    from src.search.tree_search import search
+    agent = _ReflectionSpyAgent()
+    facts = [_fact("Consolidation")]
+    query = _query("existential", target="SomethingNotInDAG")
+
+    search(query, facts, dag, agent, budget=5)
+
+    reflections = [r for r in agent.seen_reflections if r]
+    assert reflections, "agent never saw a reflection — channel not wired"
+    assert any("is_a" in r or "re_detect" in r for r in reflections)
+
+
+def test_reflection_requeued_at_most_once(dag):
+    """The loop is bounded: a reflected state is not reflected again."""
+    from src.search.tree_search import search
+    agent = _ReflectionSpyAgent()
+    facts = [_fact("Consolidation")]
+    query = _query("existential", target="SomethingNotInDAG")
+
+    search(query, facts, dag, agent, budget=20)
+
+    # exactly one non-empty reflection ever surfaces (single re-queue)
+    assert sum(1 for r in agent.seen_reflections if r) == 1
