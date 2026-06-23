@@ -1,4 +1,5 @@
 """End-to-end pipeline — ties perception, parsing, agent, and tree search."""
+import os
 from src.contracts import SearchResult, Query
 from src.search.tree_search import search
 from src.agent.mock import MockAgent
@@ -11,7 +12,16 @@ VINDR_FINDINGS = [
     "Pleural thickening", "Pneumothorax", "Pulmonary fibrosis",
 ]
 
-_parser = QuestionParser(finding_vocab=VINDR_FINDINGS)
+
+def _make_parser():
+    llm_client = None
+    if os.environ.get("GROQ_API_KEY"):
+        from src.llm.groq_client import complete
+        llm_client = complete
+    return QuestionParser(finding_vocab=VINDR_FINDINGS, llm_client=llm_client)
+
+
+_parser = _make_parser()
 
 
 def run_with_facts(question, facts, dag, agent=None, budget=20, k=3, img_wh=None,
