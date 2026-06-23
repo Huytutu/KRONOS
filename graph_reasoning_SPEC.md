@@ -115,11 +115,11 @@ subgraph; the **path returned by `find_path` is the rationale**.
   toward Tier A.
 
 ### 3.4 Multi-hop evaluation subset
-- **Construct** a QA subset whose questions *require* a multi-hop chain (e.g. "Is there a finding
-  that may cause X?", "Which detected finding is associated with Y?"), generated from VinDr bbox
-  labels + the KG, each tagged with required hop-count.
-- *Design details (templates, hop tagging, balancing) are a TBD to be specified before
-  implementation — see §8.*
+- **Construct** a QA subset whose questions *require* a 2-hop **shared-cause** chain (A ← D → B):
+  "the X-ray shows A and B — could a single condition account for both? name one." GT is
+  deterministic from the KG (common causes); ~300 image-grounded items, ~50/50 Yes/No.
+- Full design (template, schema, generation, metrics, deletion test, boundaries) is specified in
+  **`multihop_qa_SPEC.md`**. Built by the user.
 
 ### 3.5 Baselines
 1. MedGemma zero-shot.
@@ -207,8 +207,8 @@ tests/
 
 ## 8. Open TBDs (to specify before/at implementation)
 
-1. **Multi-hop QA subset design** — question templates, hop-count tagging, answer derivation from
-   VinDr labels + KG, class balance, size. *(User: "I'll build it, you'll tell me how.")*
+1. **Multi-hop QA subset design** — ✅ specified in `multihop_qa_SPEC.md` (shared-cause 2-hop,
+   ~300 items, KG-derived GT, deletion test). User builds `scripts/build_multihop_qa.py`.
 2. **RGO/RadLex export specifics** — exact OWL/RDF parse, relation whitelist, hop-limit N for the
    thoracic subgraph, and the VinDr→concept mapping table.
 3. **Reflection content** — exact wording of `explain()` per qtype (kept short, actionable).
