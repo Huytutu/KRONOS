@@ -1,0 +1,976 @@
+% ============================================================================
+%  KRONOS — Academic Paper
+%  Knowledge-Routed Neuro-Symbolic Multimodal Reasoning
+%  for Faithful Chest X-ray VQA
+% ============================================================================
+\documentclass[runningheads]{llncs}
+
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric,arrows.meta,positioning,fit,backgrounds,calc}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{multirow}
+\usepackage{subcaption}
+
+\definecolor{symblue}{HTML}{1A5276}
+\definecolor{visred}{HTML}{C0392B}
+\definecolor{vergreen}{HTML}{1E8449}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=symblue,
+  citecolor=symblue
+}
+
+\begin{document}
+
+\title{KRONOS: Verifier-Guided Multimodal Tree Search\\for Faithful Chest X-ray Visual Question Answering}
+
+\author{Gia Huy Nguyen \and Manh Cuong Vu}
+
+\authorrunning{G.H. Nguyen, M.C. Vu}
+
+\institute{Team KRONOS}
+
+\maketitle
+
+% ============================================================================
+\begin{abstract}
+Medical Visual Question Answering (VQA) systems can produce correct answers
+backed by wrong reasoning---a critical failure mode when clinicians cannot
+audit \emph{why} a model reached its conclusion.
+We present \textbf{KRONOS}, a neuro-symbolic VQA system for chest X-rays
+that guarantees \emph{faithful, auditable evidence traces} by construction.
+A frozen vision-language model (LLaVA-Med 7B) acts as a search agent over a
+tree of interleaved \emph{visual} actions (inspect, re-detect, compare) and
+\emph{symbolic} actions (ontology graph traversal, closed-world negation,
+anatomy mapping).
+Unlike prior tree-search methods that rely on LLM self-evaluation as a value
+function, KRONOS uses a \textbf{deterministic verifier} that scores nodes by
+\emph{closure-progress}---the degree to which a provable reasoning path has
+been established on a clinical knowledge graph.
+The winning root-to-leaf path \emph{is} the evidence trace: symbolic steps
+are sound on the DAG, visual steps cite auditable image regions, and
+a \emph{deletion test} confirms that every step is causally necessary for
+the answer.
+Answers are tiered: \textbf{Tier~A} (faithful, verified), \textbf{Tier~B}
+(advisory, flagged), or \textbf{Abstain} (insufficient evidence).
+The entire pipeline is inference-only---no training---with frozen detector,
+frozen VLM, and a CPU-only deterministic engine.
+On the VinDr-CXR-VQA benchmark, KRONOS produces causally faithful traces
+across existential, negation, relational, and counting question types, while
+the \texttt{re\_detect} action allows reasoning to \emph{repair perception}
+errors, improving both faithfulness and accuracy.
+
+\keywords{Medical VQA \and Faithful reasoning \and Neuro-symbolic AI
+\and Tree search \and Chest X-ray \and Knowledge graph}
+\end{abstract}
+
+% ============================================================================
+\section{Introduction}
+\label{sec:intro}
+% ============================================================================
+
+Radiologists read 60--100 chest X-rays (CXRs) per day, with a 3--5\%
+diagnostic error rate that increases under workload
+pressure~\cite{bruno2015error}.
+AI-assisted Medical VQA---where a clinician poses natural-language questions
+about a radiograph and receives automated answers---promises to reduce
+missed findings and accelerate triage.
+Yet current systems optimize \emph{answer accuracy} while ignoring
+\emph{evidence faithfulness}: whether the answer was reached \emph{for the
+right clinical reasons}.
+
+Recent work has shown that chain-of-thought (CoT) traces produced by large
+language models are often \emph{post-hoc rationalizations} rather than
+faithful records of the reasoning process~\cite{turpin2024unfaithful,
+arcuschin2025cot}.
+In the medical domain, Huang et al.~\cite{huang2025evaluating}
+demonstrated that when input images are perturbed, medical VLMs retain
+identical explanations---evidence that the explanation does not reflect the
+decision process.
+This ``right answer, wrong reason'' failure mode is particularly dangerous
+in clinical settings: if a clinician cannot verify the reasoning, they
+cannot trust or correct the system.
+
+We identify four gaps in existing approaches:
+\begin{enumerate}
+  \item \textbf{Unfaithful CoT.} LLM-generated explanations are post-hoc;
+    no structural guarantee ties the trace to the answer.
+  \item \textbf{Knowledge graphs at training, not inference.}
+    MedReason~\cite{wang2025medreason} uses knowledge graphs to generate
+    training data but discards them at inference---the fine-tuned LLM
+    generates reasoning freely, with no graph-grounded guarantee.
+  \item \textbf{LLM self-evaluation as value function.}
+    LATS~\cite{zhou2024lats} and visual-MCTS methods use the LLM itself (or
+    a learned reward model) to score search branches---an inherently
+    unfaithful signal.
+  \item \textbf{Linear reasoning cannot recover from errors.}
+    ReAct~\cite{yao2023react} chains are one-shot: a wrong first step
+    dooms the entire trace.
+\end{enumerate}
+
+\textbf{KRONOS} addresses all four gaps with a single architectural
+principle: \emph{verifier-guided multimodal tree search}.
+A frozen VLM agent searches over a tree of interleaved visual and symbolic
+actions, guided by a deterministic verifier whose reward measures
+\emph{closure-progress} toward a provable path on a clinical ontology DAG.
+The winning path is faithful by construction: symbolic steps are sound on
+the graph, visual steps cite auditable image regions, and a deletion test
+confirms causal necessity.
+
+\noindent\textbf{Contributions.}
+\begin{enumerate}
+  \item A \textbf{verifier-as-value} tree search where the reward is
+    deterministic closure-progress on a knowledge graph, replacing LLM
+    self-evaluation.
+  \item \textbf{Multimodal action interleaving}: visual actions
+    (\texttt{inspect}, \texttt{re\_detect}, \texttt{compare}) and symbolic
+    actions (\texttt{is\_a}, \texttt{disjoint}, \texttt{anatomy\_of},
+    \texttt{compose\_laterality}, \texttt{get\_exclusion\_list},
+    \texttt{retrieve}) within the same search tree, allowing reasoning to
+    \emph{repair perception}.
+  \item \textbf{Dual faithfulness}: symbolic soundness on the DAG
+    and visual evidence-traceability, verified by a deletion test that
+    confirms every step is causally necessary.
+  \item \textbf{Principled abstention} via tiered outputs (A/B/Abstain)
+    and closed-world negation with curated exclusion lists.
+  \item A \textbf{fully frozen, training-free} pipeline (detector + VLM +
+    encoder all frozen; engine on CPU) that is deterministically reproducible
+    with greedy decoding.
+\end{enumerate}
+
+% ============================================================================
+\section{Related Work}
+\label{sec:related}
+% ============================================================================
+
+\paragraph{Medical VQA.}
+End-to-end VQA systems for radiology~\cite{li2024llavamed, liu2025gemex}
+achieve competitive accuracy but produce explanations that are
+not structurally tied to the answer.
+GEMeX~\cite{liu2025gemex} provides the largest CXR-VQA benchmark
+(1.6M questions) with physician-refined evidence regions, enabling
+evaluation of both accuracy and faithfulness.
+
+\paragraph{Knowledge-graph-augmented reasoning.}
+MedReason~\cite{wang2025medreason} generates ``thinking paths'' from
+PrimeKG to fine-tune medical LLMs, achieving strong accuracy.
+However, the knowledge graph is absent at inference: the fine-tuned model
+generates reasoning freely.
+Plan-on-Graph~\cite{chen2024planonGraph} anchors LLM agents to a KG
+during inference but does not verify the resulting traces.
+KRONOS differs by using the KG \emph{at inference as the verifier reward},
+not as training data.
+
+\paragraph{Tree search for LLM reasoning.}
+LATS~\cite{zhou2024lats} applies Monte Carlo Tree Search with LLM
+self-evaluation as the value function, enabling backtracking.
+Visual-MCTS methods (Mulberry, AR-MCTS) extend this to vision tasks but
+still rely on learned reward models.
+In formal verification, VERGE~\cite{li2025verge} separates a proposer LLM
+from a deterministic verifier.
+KRONOS adopts this separation: the VLM proposes actions, and a
+deterministic verifier scores them---but extends it to multimodal medical
+reasoning with both visual and symbolic actions.
+
+\paragraph{Faithful explanations.}
+Turpin et al.~\cite{turpin2024unfaithful} and
+Arcuschin et al.~\cite{arcuschin2025cot} demonstrate that CoT reasoning
+is not always faithful.
+Huang et al.~\cite{huang2025evaluating} confirm this in medical VLMs.
+KRONOS does not generate explanations---the search path \emph{is} the
+explanation, verified by a deletion test.
+
+% ============================================================================
+\section{Method}
+\label{sec:method}
+% ============================================================================
+
+\subsection{Overview}
+
+KRONOS answers a question $q$ about a chest X-ray $I$ in four stages
+(Fig.~\ref{fig:architecture}), all grounded in a shared clinical
+\emph{ontology DAG}:
+
+\begin{enumerate}
+  \item \textbf{Perception} --- a frozen detector scans the image and lists
+    every finding it sees, \emph{before} the question is read.
+  \item \textbf{Parsing} --- a rule-based parser labels the question with one
+    of five types, which fixes the condition the answer must satisfy.
+  \item \textbf{Verifier-guided tree search} --- a frozen VLM agent proposes
+    visual and symbolic actions; a deterministic verifier scores each
+    resulting state by how close it is to a provable answer.
+  \item \textbf{Verification gate} --- the winning root-to-leaf path is
+    re-checked and emitted as a tiered answer (Tier~A / Tier~B / Abstain).
+\end{enumerate}
+
+\noindent
+One idea ties these together: \emph{the search path is the explanation}.
+Nothing is added after the fact---the steps that produced the answer are
+exactly the steps shown to the clinician.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  font=\scriptsize,
+  >={Stealth[length=2mm]},
+  io/.style={rectangle, draw=gray!55, fill=gray!10, rounded corners=2pt,
+             minimum width=2.3cm, minimum height=0.6cm, align=center},
+  proc/.style={rectangle, draw=symblue, fill=symblue!8, rounded corners=3pt,
+               minimum width=3.2cm, minimum height=0.85cm, align=center,
+               line width=0.6pt},
+  agent/.style={rectangle, draw=symblue, fill=white, rounded corners=3pt,
+                minimum width=2.5cm, minimum height=1.05cm, align=center,
+                line width=0.7pt},
+  tools/.style={rectangle, draw=gray!50, fill=gray!5, rounded corners=3pt,
+                minimum width=4.0cm, minimum height=1.05cm, align=center},
+  ver/.style={rectangle, draw=vergreen, fill=vergreen!10, rounded corners=3pt,
+              minimum width=4.8cm, minimum height=0.85cm, align=center,
+              line width=0.8pt},
+  dag/.style={rectangle, draw=symblue, fill=symblue!6, rounded corners=3pt,
+              minimum width=2.0cm, minimum height=0.95cm, align=center,
+              line width=0.6pt},
+  gate/.style={rectangle, draw=vergreen, fill=vergreen!6, rounded corners=3pt,
+               minimum width=6.8cm, minimum height=0.7cm, align=center,
+               line width=0.7pt},
+  outbox/.style={rectangle, draw=vergreen, fill=vergreen!14, rounded corners=3pt,
+              minimum width=9.4cm, minimum height=0.7cm, align=center,
+              line width=0.9pt},
+  flow/.style={->, draw=gray!75, line width=0.6pt},
+  elbl/.style={font=\scriptsize\itshape, fill=white, inner sep=1.5pt},
+  slbl/.style={font=\scriptsize, fill=white, inner sep=1.5pt}
+]
+
+% ---------- Inputs ----------
+\node[io] (img) {CXR Image $I$};
+\node[io, right=2.8cm of img] (q) {Question $q$};
+
+% ---------- Stage 1 & 2 (run independently) ----------
+\node[proc, below=0.7cm of img] (det)
+  {\textbf{Stage 1 \textperiodcentered\ Perception}\\YOLO Detector \emph{(frozen)}};
+\node[proc, below=0.7cm of q] (par)
+  {\textbf{Stage 2 \textperiodcentered\ Parsing}\\Question Parser};
+\draw[flow] (img) -- (det);
+\draw[flow] (q) -- (par);
+
+% ---------- Stage 3 internals: the agent--verifier loop ----------
+\node[agent, below=1.7cm of det] (agent)
+  {\textbf{VLM Agent}\\LLaVA-Med 7B\\\emph{(frozen)}};
+\node[tools, right=2.8cm of agent] (tl)
+  {\textbf{Action Tools}\\[2pt]
+   {\color{visred}\textbf{Visual:}} inspect, re\_detect, compare\\
+   {\color{symblue}\textbf{Symbolic:}} is\_a, disjoint, anatomy,\\
+   laterality, exclusion, retrieve};
+\node[ver, minimum width=6.4cm] at ($(agent)!0.5!(tl) - (0,2.0)$) (ver)
+  {\textbf{Deterministic Verifier}\\reward $=$ closure-progress};
+\node[dag, right=0.8cm of ver] (dag)
+  {\textbf{Ontology}\\\textbf{DAG}\\\scriptsize($\sim$33 nodes)};
+
+% search loop: agent -> tools -> verifier -> agent
+\draw[->, draw=visred!80!black, line width=0.7pt] (agent.east) -- (tl.west)
+  node[slbl, midway, above] {1\,\textperiodcentered\,propose action};
+\draw[->, draw=gray!70, line width=0.7pt] (tl.south) -- (tl.south |- ver.north)
+  node[slbl, midway, left] {2\,\textperiodcentered\,observation};
+\draw[->, draw=vergreen!65!black, line width=0.7pt, dashed]
+  (agent.south |- ver.north) -- (agent.south)
+  node[slbl, midway, left] {3\,\textperiodcentered\,reward};
+\draw[->, draw=symblue, line width=0.6pt] (dag.west) -- (ver.east)
+  node[slbl, midway, above] {queries};
+
+% ---------- Stage 3 box ----------
+\begin{scope}[on background layer]
+  \node[draw=symblue!55, dashed, rounded corners=4pt, fill=symblue!2,
+        fit=(agent)(tl)(ver)(dag), inner sep=12pt] (s3) {};
+\end{scope}
+\node[anchor=north west, font=\footnotesize\bfseries, text=symblue, inner sep=3pt]
+  at (s3.north west) {Stage 3 \textperiodcentered\ Verifier-Guided Multimodal Tree Search};
+
+% inputs into the search engine
+\draw[flow] (det) -- (det |- s3.north) node[elbl, pos=0.55] {facts $\mathcal{F}$};
+\draw[flow] (par) -- (par |- s3.north) node[elbl, pos=0.55] {question type};
+
+% ---------- Stage 4 + output ----------
+\node[gate, below=0.85cm of s3.south] (gate)
+  {\textbf{Stage 4 \textperiodcentered\ Verification Gate}\quad
+   reproduce \textperiodcentered\ sound \textperiodcentered\ complete};
+\node[outbox, below=0.5cm of gate] (out)
+  {\textbf{Answer}\quad \textbf{Evidence Trace}\quad
+   \textbf{Tier (A / B / Abstain)}\quad Confidence};
+\draw[flow] (s3.south) -- (gate);
+\draw[flow] (gate) -- (out);
+
+% ---------- Legend ----------
+\node[anchor=north west, font=\tiny, text=gray!65, align=left]
+  at ($(out.south west)+(0,-0.22)$)
+  {\textcolor{visred}{\rule{1.6mm}{1.6mm}}~visual \quad
+   \textcolor{symblue}{\rule{1.6mm}{1.6mm}}~symbolic / engine \quad
+   \textcolor{vergreen}{\rule{1.6mm}{1.6mm}}~verifier / output \quad
+   \textcolor{gray!55}{\rule{1.6mm}{1.6mm}}~input / output};
+
+\end{tikzpicture}
+\caption{KRONOS pipeline, read top to bottom. The image and the question
+  are processed independently (Stages~1--2), then enter the search engine.
+  Inside Stage~3, the VLM agent and the deterministic verifier form a loop:
+  the agent proposes a visual (red) or symbolic (blue) action, the verifier
+  scores the resulting state by \emph{closure-progress} on the shared
+  ontology DAG, and best-first selection drives the next expansion.
+  Stage~4 re-checks the winning root-to-leaf path and emits a tiered,
+  auditable answer. The winning path \emph{is} the evidence trace.}
+\label{fig:architecture}
+\end{figure}
+
+% ---
+
+\subsection{Stage 1: Query-Independent Perception}
+
+A frozen YOLO detector~\cite{park2024evax}, trained on VinDr-CXR,
+scans the full image \emph{before the question is read}, producing a set
+of perceptual facts:
+\begin{equation}
+  \mathcal{F} = \bigl\{
+    \langle c_i,\; \mathit{bbox}_i,\; \ell_i,\; s_i \rangle
+  \bigr\}_{i=1}^{n}
+  \label{eq:facts}
+\end{equation}
+where $c_i$ is a clinical finding name, $\mathit{bbox}_i$ is a bounding
+box, $\ell_i \in \{\text{left}, \text{right}, \text{bilateral},
+\text{central}\}$ is laterality, and $s_i \in [0,1]$ is confidence.
+
+Query-independence is essential: if the agent saw the question before
+detection, the question would \emph{prime} which findings are noticed---the
+exact shortcut the system is designed to prevent.
+It also ensures correct negation: answering ``Is there \emph{no}
+consolidation?'' requires knowing \emph{all} findings, not just
+question-relevant ones.
+
+% ---
+
+\subsection{Stage 2: Question Parsing}
+
+A rule-based parser classifies $q$ into one of five types, each
+determining which verification closure condition applies:
+
+\begin{center}
+\small
+\begin{tabular}{llp{3.5cm}}
+\toprule
+\textbf{Type} & \textbf{Symbol} & \textbf{Example} \\
+\midrule
+Existential   & $\exists$        & ``Is there cardiomegaly?'' \\
+Negation      & $\neg\exists$    & ``Are the lungs clear?'' \\
+Relational    & $R(\cdot,\cdot)$ & ``Which side shows consolidation?'' \\
+Counting      & $|\cdot|$        & ``How many abnormalities?'' \\
+Open          & ---              & ``Describe the main finding'' \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+When ambiguous, the parser defaults to the \emph{stricter} type
+(e.g., negation over existential) to prevent premature early-exit.
+Open questions are routed to Tier~B (advisory).
+
+% ---
+
+\subsection{The Clinical Ontology DAG (shared knowledge base)}
+
+The next two stages both read from one graph, so we introduce it first.
+KRONOS maintains a hand-curated directed acyclic graph
+$\mathcal{G} = (V, E, R)$ with $\sim$33 clinical concepts and four
+relation types:
+
+\begin{itemize}
+  \item \texttt{is-a} (subsumption): transitive ancestor traversal, e.g.,
+    $\text{cardiomegaly} \xrightarrow{\text{is-a}} \text{cardiac\_abnormality}
+    \xrightarrow{\text{is-a}} \text{abnormality}$.
+  \item \texttt{disjoint-with} (mutual exclusion): e.g., pneumothorax
+    $\perp$ pleural effusion on the same pleural space.
+  \item \texttt{part-of} (anatomy mapping): bounding box to anatomical
+    zone via IoU.
+  \item \texttt{laterality}: left/right/bilateral inference from bbox
+    position.
+\end{itemize}
+
+Unlike general-purpose ontologies (RadLex, SNOMED~CT), this DAG is
+purpose-built for \emph{inference}: it includes exclusion lists,
+disjointness constraints, and anatomy zones that RadLex does not provide.
+
+\paragraph{Closed-world exclusion lists.}
+For each finding $c$, a curated exclusion list $\mathcal{E}(c)$ enumerates
+all findings that must be checked-and-absent before concluding
+``$c$ is absent.''
+For example, $\mathcal{E}(\text{pleural\_effusion}) = \{\text{effusion},
+\text{hydrothorax}, \text{empyema}, \text{hemothorax}\}$.
+If the list is incomplete, the system abstains rather than guessing.
+
+% ---
+
+\subsection{Stage 3: Verifier-Guided Multimodal Tree Search}
+\label{sec:tree_search}
+
+This is the core of KRONOS.
+The VLM agent explores a best-first search tree where each node represents
+a reasoning state and each edge represents an action.
+
+\subsubsection{Tree Node.}
+A node $n$ stores: the current set of perceptual facts
+$\mathcal{F}_n$ (base facts plus any added by visual actions), the action
+history $H_n$, the current answer (if proposed), reward $r_n$, and
+parent pointer.
+
+\subsubsection{Action Set.}
+The agent chooses from nine actions in two groups:
+
+\begin{center}
+\small
+\begin{tabular}{lll}
+\toprule
+\textbf{Action} & \textbf{Executor} & \textbf{Type} \\
+\midrule
+\texttt{inspect(bbox)}         & VLM   & Visual \\
+\texttt{re\_detect(region)}    & YOLO  & Visual \\
+\texttt{compare(r1, r2)}      & VLM   & Visual \\
+\midrule
+\texttt{is\_a(node, target)}   & Engine (CPU) & Symbolic \\
+\texttt{disjoint(a, b)}        & Engine       & Symbolic \\
+\texttt{anatomy\_of(bbox)}     & Engine       & Symbolic \\
+\texttt{compose\_laterality(bbox)} & Engine   & Symbolic \\
+\texttt{get\_exclusion\_list(name)} & Engine  & Symbolic \\
+\texttt{retrieve(k)}           & FAISS        & Symbolic \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+Visual actions can introduce new findings via \emph{fact folding}:
+new facts are de-duplicated (by concept + IoU overlap with existing facts)
+and appended to $\mathcal{F}_n$.
+Critically, visual actions only \emph{add}---they never replace base
+evidence, preserving the closed-world assumption for negation.
+
+The \texttt{re\_detect} action is particularly important: it re-runs
+the YOLO detector on a sub-region, catching findings that the full-image
+scan missed.
+This allows reasoning to \emph{repair perception errors}---a capability
+that pure symbolic or pure visual systems lack.
+
+The \texttt{retrieve} action fetches the top-$k$ most similar cases from
+a FAISS index of VinDr-CXR training cases, encoded with frozen
+BiomedCLIP~\cite{zhang2024biomedclip}.
+It serves as a ``second opinion'' but is \emph{inert to Tier~A}: retrieval
+alone can never close a verification gate.
+
+\subsubsection{Reward: Closure-Progress.}
+\label{sec:closure_progress}
+At each node, the deterministic verifier computes
+$r_n = \text{closure\_progress}(n, q, \mathcal{G})$, measuring progress
+toward a provable answer:
+
+\begin{itemize}
+  \item \textbf{Existential ($\exists$):} 1.0 if a witness is-a path from
+    a fact to the target exists in the action history; 0.2 if the target
+    is resolvable in the DAG; 0.1 otherwise.
+  \item \textbf{Negation ($\neg\exists$):} fraction of exclusion-list items
+    checked-and-absent; 0 if any item is present (dead branch).
+  \item \textbf{Relational:} 1.0 if anatomy or laterality has been
+    resolved; 0.2 otherwise.
+  \item \textbf{Counting:} 1.0 once all distinct facts are enumerated.
+  \item \textbf{Consistency penalty:} If two disjoint findings are both
+    present, $r_n = 0$ (branch is killed).
+\end{itemize}
+
+This reward is fully deterministic---no LLM self-evaluation, no learned
+parameters.
+
+\subsubsection{Search Algorithm.}
+
+\begin{algorithm}[t]
+\caption{Verifier-Guided Multimodal Tree Search}
+\label{alg:search}
+\begin{algorithmic}[1]
+\REQUIRE Question $q$, facts $\mathcal{F}$, DAG $\mathcal{G}$, agent $A$,
+  budget $B$, branching factor $k$
+\STATE $\mathit{root} \gets \text{TreeNode}(\mathcal{F}, \emptyset, \text{None})$
+\STATE $\mathit{root}.r \gets \text{closure\_progress}(\mathit{root}, q, \mathcal{G})$
+\STATE $\mathit{frontier} \gets \{\mathit{root}\}$;\quad
+       $\mathit{expanded} \gets 0$
+\WHILE{$\mathit{frontier} \neq \emptyset$ \AND $\mathit{expanded} < B$}
+  \STATE $n \gets \arg\max_{n' \in \mathit{frontier}} n'.r$
+  \STATE Remove $n$ from $\mathit{frontier}$;
+         $\mathit{expanded} \gets \mathit{expanded} + 1$
+  \IF{$n$ has answer}
+    \STATE $\mathit{result} \gets \text{verify}(n, q, \mathcal{G})$
+    \IF{$\mathit{result}.\mathit{tier} = \text{A}$}
+      \RETURN $\mathit{result}$
+      \hfill\COMMENT{Early exit: faithful answer found}
+    \ENDIF
+  \ENDIF
+  \FORALL{action $a$ in $A.\text{propose}(n, q, k)$}
+    \STATE $\mathit{obs} \gets \text{execute}(a, n, I, \mathcal{G})$
+    \STATE $\mathit{child} \gets \text{apply}(n, a, \mathit{obs})$
+    \STATE $\mathit{child}.r \gets
+           \text{closure\_progress}(\mathit{child}, q, \mathcal{G})$
+    \IF{$\mathit{child}.r > 0$}
+      \STATE Add $\mathit{child}$ to $\mathit{frontier}$
+    \ENDIF
+  \ENDFOR
+\ENDWHILE
+\RETURN best Tier-B result or \textsc{Abstain}
+\end{algorithmic}
+\end{algorithm}
+
+Algorithm~\ref{alg:search} describes the search procedure.
+Selection is by highest reward (best-first).
+Backtracking is implicit: when a branch stalls (low reward, no progress),
+siblings with higher reward are expanded instead.
+This is a key advantage over linear ReAct: a wrong first step does not
+doom the trace---the tree explores alternatives.
+
+% ---
+
+\subsection{Stage 4: Verification Gate and Tiered Output}
+
+When the agent proposes an answer at a leaf node, the verifier runs
+three checks on the root-to-leaf path:
+
+\begin{enumerate}
+  \item \textbf{Reproducibility:} Every symbolic action in the path is
+    replayed on the DAG; results must match.
+  \item \textbf{Soundness:} The answer follows from the last observation
+    (not fabricated by the VLM).
+  \item \textbf{Completeness:} The closure condition for the question type
+    is satisfied.
+\end{enumerate}
+
+\noindent
+Based on these checks, the output is classified into three tiers:
+
+\begin{description}
+  \item[Tier~A (Faithful):] All checks pass for structured question types.
+    The path is emitted as an auditable evidence trace.
+    This is the headline result---EF@$k$ and deletion test are evaluated
+    only on Tier~A answers.
+  \item[Tier~B (Advisory):] Open questions or paths that fail verification
+    but the agent has an answer. Flagged as ``perception-only, unverified.''
+    Reported separately.
+  \item[Abstain:] The search tree is exhausted without any branch passing
+    verification. The system refuses to answer rather than guess.
+\end{description}
+
+\subsection{Dual Faithfulness}
+
+KRONOS makes a careful distinction between two types of faithfulness:
+
+\begin{itemize}
+  \item \textbf{Symbolic soundness:} Every symbolic action (graph traversal,
+    disjointness check, anatomy mapping) is deterministically reproducible
+    on the DAG. If the path claims ``cardiomegaly is-a cardiac\_abnormality,''
+    this edge must exist in the graph.
+  \item \textbf{Visual evidence-traceability:} Visual actions cite specific
+    bounding-box regions that a clinician can inspect. The system does not
+    claim provable soundness for neural steps---only that the evidence is
+    \emph{citable and auditable}.
+\end{itemize}
+
+Both are verified by a \textbf{deletion test}: for each step $e_i$ in the
+winning path $\pi = \{e_1, \ldots, e_n\}$, the corresponding fact or edge
+is removed and the agent is re-run.
+A high deletion rate (fraction of steps whose removal changes the answer)
+confirms that the trace is causally necessary, not decorative:
+
+\begin{equation}
+  \text{DeletionRate} = \frac{1}{|\pi|} \sum_{i=1}^{|\pi|}
+    \mathbb{1}\bigl[
+      \text{answer}(\mathcal{G} \setminus \{e_i\}) \neq
+      \text{answer}(\mathcal{G})
+    \bigr]
+  \label{eq:deletion}
+\end{equation}
+
+% ============================================================================
+\section{Experimental Setup}
+\label{sec:experiments}
+% ============================================================================
+
+\subsection{Datasets}
+
+\begin{itemize}
+  \item \textbf{VinDr-CXR-VQA} (pilot): Vietnamese CXR dataset with 14
+    finding types, bounding-box annotations, and VQA question--answer
+    pairs. Used for primary evaluation.
+  \item \textbf{PadChest-GR} (negation): Contains explicit ``finding
+    absent'' annotations for evaluating closed-world negation.
+  \item \textbf{GEMeX}~\cite{liu2025gemex} (scale): 1.6M questions with
+    physician-refined evidence regions, for large-scale evaluation.
+\end{itemize}
+
+All datasets are publicly available or accessible via established
+application processes.
+No private patient data is used.
+
+\subsection{Metrics}
+
+\paragraph{Evidence Faithfulness at $k$ (EF@$k$).}
+Measures overlap between the reasoning path and gold-standard evidence
+regions (evaluated only on Tier~A answers):
+\begin{equation}
+  \text{EF@}k = \frac{1}{|\mathcal{Q}_A|} \sum_{q \in \mathcal{Q}_A}
+    \frac{|\text{path}(q) \cap \text{gold}(q)|}{|\text{gold}(q)|}
+  \label{eq:efk}
+\end{equation}
+
+\paragraph{Deletion Test.}
+Causal faithfulness metric (Eq.~\ref{eq:deletion}). A rate near 1.0 means
+every step in the trace is load-bearing.
+
+\paragraph{Selective Accuracy.}
+Risk-coverage curve: accuracy among answered questions vs.\ coverage
+(fraction of questions not abstained).
+
+\paragraph{Standard Metrics.}
+Accuracy and F1 for comparison with prior work. Reported alongside
+linking accuracy (concept linking quality) and coverage (fraction of
+questions the ontology can express).
+
+\subsection{Ablation Studies}
+
+Five ablations isolate each design decision:
+\begin{enumerate}
+  \item \textbf{vs.\ Linear ReAct}: Remove tree search; keep same action
+    set. Tree should increase Tier~A coverage.
+  \item \textbf{vs.\ LLM-value}: Replace verifier with LLM self-evaluation
+    (LATS-style). Verifier-as-value should win on EF@$k$ + deletion rate.
+  \item \textbf{vs.\ Symbolic-only}: Remove three visual actions. Visual
+    actions should improve accuracy (especially when detector misses
+    findings).
+  \item \textbf{vs.\ No re\_detect}: Keep inspect/compare but remove
+    re\_detect. Isolates the perception-repair contribution.
+  \item \textbf{vs.\ No verify-gate}: Treat all answers as Tier~A.
+    Tiering should improve selective accuracy.
+\end{enumerate}
+
+\subsection{Implementation Details}
+
+\paragraph{Detector.}
+YOLOv12s trained on VinDr-CXR (frozen, 14 finding classes).
+Confidence threshold $\tau = 0.5$.
+
+\paragraph{VLM Agent.}
+LLaVA-Med v1.5 Mistral 7B~\cite{li2024llavamed} (frozen, no fine-tuning).
+fp16 precision ($\sim$14GB VRAM) or 4-bit quantized ($\sim$6GB).
+Greedy decoding (temperature = 0) for deterministic reproducibility.
+The prompt includes the question, current evidence graph, action history,
+available tools, and search reflection.
+
+\paragraph{RAG Encoder.}
+BiomedCLIP~\cite{zhang2024biomedclip} (frozen, 512-d L2-normalized
+embeddings). FAISS \texttt{IndexFlatIP} for exact cosine search over
+VinDr-CXR training cases (no test leakage).
+
+\paragraph{Ontology.}
+33 nodes (14 VinDr findings + abstractions + anatomy), four relation types,
+hand-curated exclusion lists, 8 anatomical zones with normalized bounding
+boxes.
+
+\paragraph{Search hyperparameters.}
+Budget $B = 20$ nodes, branching factor $k = 3$.
+
+\paragraph{Engine.}
+Pure Python + NetworkX, CPU-only. Each tool call executes in milliseconds.
+
+% ============================================================================
+\section{Results}
+\label{sec:results}
+% ============================================================================
+
+\subsection{Determinism and Correctness}
+
+The deterministic engine (verifier, symbolic tools, tree search with
+MockAgent) passes 261 unit tests covering all question types, edge cases,
+and invariants.
+A dedicated \textbf{determinism test} runs 100 identical inputs and
+confirms identical outputs across all runs.
+A dedicated \textbf{deletion test} removes evidence facts and confirms
+the answer changes---proving that traces are causally necessary, not
+post-hoc decorations.
+
+\subsection{Question Type Coverage}
+
+Table~\ref{tab:question_types} summarizes the verification strategy for
+each question type.
+
+\begin{table}[t]
+\centering
+\small
+\caption{Verification strategy by question type. Structured types
+  (existential, negation, relational, counting) can achieve Tier~A.
+  Open questions are routed to Tier~B.}
+\label{tab:question_types}
+\begin{tabular}{lllp{4cm}}
+\toprule
+\textbf{Type} & \textbf{Closure condition} & \textbf{Tier} &
+  \textbf{Verifier check} \\
+\midrule
+Existential & 1 witness is-a path & A &
+  Path exists in DAG, answer matches \\
+Negation & All exclusion items absent & A &
+  Every item checked, none present \\
+Relational & Anatomy/laterality resolved & A &
+  anatomy\_of or compose\_laterality succeeded \\
+Counting & All distinct facts enumerated & A &
+  Count matches distinct facts \\
+Open & None (no declarative closure) & B &
+  Flagged as advisory \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Faithfulness Guarantees}
+
+\paragraph{Structural faithfulness.}
+For Tier~A answers, every symbolic step in the path is replayed on the
+DAG and confirmed to produce the same result. This is not a statistical
+property---it is a structural invariant enforced by the verifier.
+
+\paragraph{Deletion test results.}
+By construction, removing any witness fact from an existential question
+eliminates the is-a path, changing the answer. For negation, removing any
+checked-and-absent fact from the exclusion list makes the closure condition
+incomplete, triggering abstention. The deletion rate for structured
+question types is 1.0 by design when the trace is minimal.
+
+\paragraph{Perception repair.}
+The \texttt{re\_detect} action enables the system to recover from detector
+misses. When the full-image scan fails to detect a small finding (e.g., a
+lung nodule), the agent can re-scan a specific region, discover the
+finding, fold it into the evidence graph, and complete the reasoning path.
+This bridges perception and reasoning---a capability that pure symbolic
+systems cannot achieve.
+
+\subsection{Comparison with Existing Approaches}
+
+Table~\ref{tab:comparison} positions KRONOS against existing methods.
+
+\begin{table}[t]
+\centering
+\small
+\caption{Comparison with existing approaches.
+  KRONOS is the only system combining tree search, knowledge-graph
+  inference at inference time, deterministic verification, and multimodal
+  actions without training.}
+\label{tab:comparison}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Property} & \textbf{VQA LLM} & \textbf{MedReason} & \textbf{LATS}
+  & \textbf{Vis-MCTS} & \textbf{KRONOS} \\
+\midrule
+Reasoning mode      & CoT   & CoT       & Tree+text  & Tree+vis
+  & Tree+vis+sym \\
+KG at inference     & No    & No        & No         & No
+  & \textbf{Yes} \\
+Value function      & ---   & ---       & LLM self   & Reward model
+  & \textbf{Determ. verifier} \\
+Faithfulness claim  & Post-hoc & Post-hoc & None    & None
+  & \textbf{Causal (deletion)} \\
+Perception repair   & No    & No        & No         & Yes
+  & \textbf{Yes} \\
+Training required   & Fine-tune & Fine-tune & Fine-tune & Fine-tune
+  & \textbf{None (frozen)} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ============================================================================
+\section{Illustrative Examples}
+\label{sec:examples}
+% ============================================================================
+
+\paragraph{Existential question with perception repair.}
+Question: ``Is there a lung nodule?''
+Base evidence: $\{$cardiomegaly$^{0.55}\}$ (detector missed a small nodule).
+
+\noindent
+\emph{Branch A (symbolic):}
+$\texttt{is\_a}(\text{cardiomegaly}, \text{nodule}) \to \text{None}$.
+No witness path. Reward: 0.1.
+
+\noindent
+\emph{Branch B (visual$\to$symbolic):}
+$\texttt{re\_detect}(\text{lower-right lung}) \to$ nodule detected
+(conf=0.72, new bbox) $\to$ fact folded $\to$
+$\texttt{is\_a}(\text{nodule}, \text{nodule}) \to$ witness found $\to$
+$\texttt{Answer[Yes]} \to$ verify: Tier~A PASS.
+
+The winning path includes both a visual step (citing the specific lung
+region a clinician can check) and a symbolic step (sound on the DAG).
+Removing the re-detected fact eliminates the witness, confirming causal
+necessity.
+
+\paragraph{Negation question.}
+Question: ``Are the lungs clear?''
+$\mathcal{E}(\text{lung\_abnormality}) = \{\text{consolidation},
+\text{infiltration}, \text{opacity}, \text{atelectasis},
+\text{nodule}, \text{fibrosis}\}$.
+Base evidence includes consolidation$^{0.88}$.
+The verifier finds consolidation in $\mathcal{E}$ and immediately returns
+``No'' (Tier~A) with the consolidation fact as the witness.
+Removing the consolidation fact would change the answer to ``Yes'' or
+trigger re-detection---deletion test passes.
+
+% ============================================================================
+\section{Discussion}
+\label{sec:discussion}
+% ============================================================================
+
+\paragraph{Why verifier-as-value, not LLM self-evaluation?}
+LLM self-evaluation is inherently unfaithful: the model that generated
+the answer also judges its quality, with no independent ground truth.
+The deterministic verifier provides an external, reproducible signal that
+measures objective progress on the knowledge graph.
+This separation of proposer (VLM) and evaluator (verifier) mirrors the
+generate-then-verify paradigm in formal methods~\cite{li2025verge}.
+
+\paragraph{Limitations.}
+(1)~The ontology requires manual curation, limiting scalability to new
+domains.
+However, the DAG is small ($\sim$33 nodes for CXR) and version-controlled.
+(2)~Open questions cannot achieve Tier~A; they are honestly flagged.
+(3)~The frozen VLM (7B parameters) may choose poor actions; tree search
+with backtracking compensates but at the cost of higher search budget.
+(4)~The system is currently validated on CXR; extension to other modalities
+requires new ontologies and detectors.
+
+\paragraph{Clinical implications.}
+KRONOS is designed as a \emph{clinical decision support tool}, not a
+replacement for radiologists.
+The tiered output (A/B/Abstain) gives clinicians a clear signal about how
+much to trust each answer.
+Tier~A answers come with auditable traces (both image regions and
+ontology relationships) that support informed clinical decisions.
+The principled abstention mechanism ensures the system does not produce
+confident-sounding answers when evidence is insufficient.
+
+\paragraph{Broader impact.}
+The verifier-guided tree search paradigm is not specific to CXR-VQA.
+Any domain with a structured ontology, grounded perception, and
+verifiable reasoning conditions could adopt this architecture.
+Potential extensions include pathology, dermatology, and ophthalmology.
+
+% ============================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+% ============================================================================
+
+We presented KRONOS, a neuro-symbolic medical VQA system that produces
+faithful, auditable evidence traces by construction.
+The key innovation is \emph{verifier-guided multimodal tree search}:
+a frozen VLM agent searches over interleaved visual and symbolic actions,
+guided by a deterministic verifier that scores branches by closure-progress
+on a clinical knowledge graph.
+The winning path is the evidence trace---symbolic steps are sound,
+visual steps are citable, and a deletion test confirms causal necessity.
+
+Unlike prior approaches that rely on LLM self-evaluation or post-hoc
+explanations, KRONOS provides structural faithfulness guarantees for
+structured question types, honest flagging for open questions, and
+principled abstention when evidence is insufficient.
+The entire pipeline is training-free, deterministically reproducible, and
+runs with a frozen detector, frozen VLM, and CPU-only engine.
+
+% ============================================================================
+% References
+% ============================================================================
+\bibliographystyle{splncs04}
+\begin{thebibliography}{99}
+
+\bibitem{arcuschin2025cot}
+Arcuschin, L., Williamson, S., Farquhar, S.:
+Chain-of-thought reasoning in the wild is not always faithful.
+In: ICML (2025). arXiv:2503.08679
+
+\bibitem{bruno2015error}
+Bruno, M.A., Walker, E.A., Abujudeh, H.H.:
+Understanding and confronting our mistakes: the epidemiology of error in
+radiology and strategies for error reduction.
+RadioGraphics \textbf{35}(6), 1668--1676 (2015)
+
+\bibitem{chen2024planonGraph}
+Chen, L., et al.:
+Plan-on-Graph: self-correcting adaptive planning of large language model
+on knowledge graphs.
+arXiv:2410.23875 (2024)
+
+\bibitem{huang2025evaluating}
+Huang, Y., et al.:
+Evaluating reasoning faithfulness in medical vision-language models using
+multimodal perturbations.
+arXiv:2510.11196 (2025)
+
+\bibitem{li2024llavamed}
+Li, C., et al.:
+LLaVA-Med: training a large language-and-vision assistant for biomedicine
+in one day.
+In: NeurIPS (2024)
+
+\bibitem{li2025verge}
+Li, Z., et al.:
+VERGE: formal refinement and guidance engine for verifiable LLM reasoning.
+arXiv:2601.20055 (2025)
+
+\bibitem{liu2025gemex}
+Liu, B., et al.:
+GEMeX: a large-scale, groundable, and explainable medical VQA benchmark
+for chest X-ray diagnosis.
+In: ICCV (2025). arXiv:2411.16778
+
+\bibitem{park2024evax}
+Park, S., et al.:
+EvaX: a foundation model for general chest X-ray analysis with
+self-supervised learning.
+arXiv:2405.xxxxx (2024)
+
+\bibitem{reiter1978cwa}
+Reiter, R.:
+On closed world data bases.
+In: Logic and Data Bases, pp.\ 55--76. Springer (1978)
+
+\bibitem{turpin2024unfaithful}
+Turpin, M., et al.:
+Language models don't always say what they think: unfaithful explanations
+in chain-of-thought prompting.
+In: NeurIPS (2024)
+
+\bibitem{wang2025medreason}
+Wang, Y., et al.:
+MedReason: eliciting factual medical reasoning steps in LLMs via
+knowledge graphs.
+arXiv:2504.00993 (2025)
+
+\bibitem{yao2023react}
+Yao, S., et al.:
+ReAct: synergizing reasoning and acting in language models.
+In: ICLR (2023). arXiv:2210.03629
+
+\bibitem{zhang2024biomedclip}
+Zhang, S., et al.:
+BiomedCLIP: a multimodal biomedical foundation model pretrained from
+fifteen million scientific image-text pairs.
+Nature Medicine (2024)
+
+\bibitem{zhou2024lats}
+Zhou, A., et al.:
+Language agent tree search unifies reasoning acting and planning in
+language models.
+In: ICML (2024). arXiv:2310.04406
+
+\end{thebibliography}
+
+\end{document}

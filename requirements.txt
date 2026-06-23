@@ -1,0 +1,20 @@
+# Core
+pydantic
+numpy
+networkx
+pyyaml
+pillow
+python-dotenv
+
+# ML / Neural (GPU)
+torch
+torchvision
+ultralytics
+transformers
+bitsandbytes
+accelerate
+open_clip_torch
+faiss-cpu
+
+# Testing
+pytest
