@@ -295,3 +295,32 @@ def test_tier_a_unchanged_relational_with_tool(dag):
     query = _query("relational", target="Cardiomegaly", constraints={"attr": "location"})
     result = verify(node, query, dag)
     assert result.tier == "A"
+
+
+# --- explain: the reflection reason fed back to the agent ---
+
+def test_explain_existential_points_to_next_tool(dag):
+    from src.engine.verifier import explain
+    node = TreeNode(state_facts=[_fact("Consolidation")], history=[])
+    query = _query("existential", target="SomethingNotInDAG")
+    reason = explain(node, query, dag)
+    assert reason
+    assert any(t in reason for t in ("is_a", "re_detect", "neighbors", "find_path"))
+
+
+def test_explain_negation_points_to_exclusion_list(dag):
+    from src.engine.verifier import explain
+    node = TreeNode(state_facts=[], history=[])
+    query = _query("negation", target="Cardiomegaly")
+    reason = explain(node, query, dag)
+    assert reason
+    assert "get_exclusion_list" in reason
+
+
+def test_explain_relational_points_to_localization_tool(dag):
+    from src.engine.verifier import explain
+    node = TreeNode(state_facts=[_fact("Cardiomegaly")], history=[])
+    query = _query("relational", target="Cardiomegaly", constraints={"attr": "location"})
+    reason = explain(node, query, dag)
+    assert reason
+    assert any(t in reason for t in ("anatomy_of", "compose_laterality"))

@@ -46,6 +46,33 @@ def verify(node, query, dag):
     return SearchResult(answer=node.answer or "", tier="ABSTAIN", path=path, conf=0.0)
 
 
+def explain(node, query, dag):
+    """Short, deterministic reason a node failed to reach Tier A — fed back to the
+    agent as a reflection so it can revise on its next attempt. Mirrors the failure
+    branches of verify() per query type."""
+    qtype = query.type
+    target = query.target or "the target"
+
+    if qtype == "existential":
+        return (f"No detected finding is-a '{target}', and '{target}' is not a known "
+                f"ontology concept, so absence cannot be confirmed. Try re_detect near a "
+                f"suspected region then is_a on new findings, or neighbors/find_path to "
+                f"relate '{target}' causally.")
+
+    if qtype == "negation":
+        if _get_fetched_exclusion_list(node) is None:
+            return (f"The exclusion list for '{target}' was not fetched. Call "
+                    f"get_exclusion_list('{target}') first, then check each item with is_a.")
+        return (f"A detected finding matches the exclusion list for '{target}', so it is "
+                f"present — '{target}' cannot be confirmed absent.")
+
+    if qtype == "relational":
+        return ("Location is unresolved. Call anatomy_of(bbox) or compose_laterality(bbox) "
+                "on the target finding's bbox.")
+
+    return "Insufficient verified evidence; gather more before answering."
+
+
 # --- existential ---
 
 def _progress_existential(node, query, dag):
