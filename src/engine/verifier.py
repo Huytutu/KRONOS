@@ -70,7 +70,9 @@ def _verify_existential(node, query, dag):
         return SearchResult(
             answer=node.answer or "No", tier="A", path=path, conf=_min_conf(node),
         )
-    return SearchResult(answer=node.answer or "", tier="ABSTAIN", path=path, conf=0.0)
+    if node.answer:
+        return SearchResult(answer=node.answer, tier="B", path=path, conf=0.3)
+    return SearchResult(answer="", tier="ABSTAIN", path=path, conf=0.0)
 
 
 # --- negation ---
@@ -100,7 +102,9 @@ def _verify_negation(node, query, dag):
     excl_list = _get_fetched_exclusion_list(node)
 
     if excl_list is None:
-        return SearchResult(answer=node.answer or "", tier="ABSTAIN", path=path, conf=0.0)
+        if node.answer:
+            return SearchResult(answer=node.answer, tier="B", path=path, conf=0.3)
+        return SearchResult(answer="", tier="ABSTAIN", path=path, conf=0.0)
 
     fact_slugs = {dag.get_node_by_name(f.concept) for f in node.state_facts}
     for slug in excl_list:
@@ -130,7 +134,9 @@ def _verify_relational(node, query, dag):
                 answer=node.answer or str(obs.result), tier="A", path=path,
                 conf=_min_conf(node),
             )
-    return SearchResult(answer=node.answer or "", tier="ABSTAIN", path=path, conf=0.0)
+    if node.answer:
+        return SearchResult(answer=node.answer, tier="B", path=path, conf=0.3)
+    return SearchResult(answer="", tier="ABSTAIN", path=path, conf=0.0)
 
 
 # --- counting ---

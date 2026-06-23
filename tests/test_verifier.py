@@ -159,7 +159,8 @@ def test_verify_negation_absent_tier_a(dag):
     assert result.tier == "A"
 
 
-def test_verify_negation_missing_list_abstain(dag):
+def test_verify_negation_missing_list_with_answer_tier_b(dag):
+    """Agent answered but exclusion list failed → tier B (not ABSTAIN)."""
     from src.engine.verifier import verify
     node = TreeNode(
         state_facts=[],
@@ -168,6 +169,22 @@ def test_verify_negation_missing_list_abstain(dag):
              _obs(None, ok=False)),
         ],
         answer="No FakeFinding",
+    )
+    query = _query("negation", target="FakeFinding")
+    result = verify(node, query, dag)
+    assert result.tier == "B"
+    assert result.answer == "No FakeFinding"
+
+
+def test_verify_negation_missing_list_no_answer_abstain(dag):
+    """No exclusion list AND no answer → still ABSTAIN."""
+    from src.engine.verifier import verify
+    node = TreeNode(
+        state_facts=[],
+        history=[
+            (_action("get_exclusion_list", name="FakeFinding"),
+             _obs(None, ok=False)),
+        ],
     )
     query = _query("negation", target="FakeFinding")
     result = verify(node, query, dag)
@@ -190,3 +207,91 @@ def test_verify_open_tier_b(dag):
     query = _query("open")
     result = verify(node, query, dag)
     assert result.tier == "B"
+
+
+# --- tier B fallback: agent answer preserved when DAG can't verify ---
+
+def test_verify_existential_answer_no_witness_tier_b(dag):
+    """Agent answered 'Yes' but no is_a witness → tier B (not ABSTAIN)."""
+    from src.engine.verifier import verify
+    node = TreeNode(
+        state_facts=[_fact("Consolidation")],
+        history=[],
+        answer="Yes",
+    )
+    query = _query("existential", target="SomethingNotInDAG")
+    result = verify(node, query, dag)
+    assert result.tier == "B"
+    assert result.answer == "Yes"
+    assert result.conf == 0.3
+
+
+def test_verify_existential_no_answer_still_abstain(dag):
+    """No witness AND no answer → ABSTAIN."""
+    from src.engine.verifier import verify
+    node = TreeNode(
+        state_facts=[_fact("Consolidation")],
+        history=[],
+    )
+    query = _query("existential", target="SomethingNotInDAG")
+    result = verify(node, query, dag)
+    assert result.tier == "ABSTAIN"
+
+
+def test_verify_relational_answer_no_tool_tier_b(dag):
+    """Agent answered 'left lung' but no anatomy_of in history → tier B."""
+    from src.engine.verifier import verify
+    node = TreeNode(
+        state_facts=[_fact("Cardiomegaly")],
+        history=[],
+        answer="left lung",
+    )
+    query = _query("relational", target="Cardiomegaly", constraints={"attr": "location"})
+    result = verify(node, query, dag)
+    assert result.tier == "B"
+    assert result.answer == "left lung"
+    assert result.conf == 0.3
+
+
+def test_verify_relational_no_answer_still_abstain(dag):
+    """No anatomy tool AND no answer → ABSTAIN."""
+    from src.engine.verifier import verify
+    node = TreeNode(
+        state_facts=[_fact("Cardiomegaly")],
+        history=[],
+    )
+    query = _query("relational", target="Cardiomegaly", constraints={"attr": "location"})
+    result = verify(node, query, dag)
+    assert result.tier == "ABSTAIN"
+
+
+def test_tier_a_unchanged_with_witness(dag):
+    """Tier A still works — existential with witness is A, not B."""
+    from src.engine.verifier import verify
+    node = TreeNode(
+        state_facts=[_fact("Cardiomegaly")],
+        history=[
+            (_action("is_a", node="cardiomegaly", target="cardiac_abnormality"),
+             _obs(["cardiomegaly", "cardiac_abnormality"])),
+        ],
+        answer="Yes",
+    )
+    query = _query("existential", target="cardiac_abnormality")
+    result = verify(node, query, dag)
+    assert result.tier == "A"
+
+
+def test_tier_a_unchanged_relational_with_tool(dag):
+    """Tier A still works — relational with anatomy_of is A, not B."""
+    from src.engine.verifier import verify
+    node = TreeNode(
+        state_facts=[_fact("Cardiomegaly", bbox=(100, 200, 360, 450))],
+        history=[
+            (_action("anatomy_of", bbox=[100, 200, 360, 450]),
+             _obs("mediastinum")),
+        ],
+        answer="mediastinum",
+    )
+    query = _query("relational", target="Cardiomegaly", constraints={"attr": "location"})
+    result = verify(node, query, dag)
+    assert result.tier == "A"
