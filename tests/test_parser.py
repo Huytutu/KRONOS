@@ -87,6 +87,57 @@ class TestConservativeDefault:
         assert q.type != "existential"
 
 
+class TestLLMFallback:
+    """Tests for the tier-2 LLM fallback when rule-based parsing fails."""
+
+    def test_valid_llm_response_produces_llm_tier(self):
+        mock_llm = lambda prompt: '{"type": "existential", "target": "Cardiomegaly"}'
+        p = QuestionParser(finding_vocab=VINDR_VOCAB, llm_client=mock_llm)
+        q = p.parse("Can you identify Cardiomegaly here?")
+        assert q.type == "existential"
+        assert q.target == "Cardiomegaly"
+        assert q.parser_tier == "llm"
+        assert q.parse_confidence == 0.5
+
+    def test_llm_not_called_when_rule_matches(self):
+        calls = []
+        mock_llm = lambda prompt: (calls.append(1), '{"type": "open"}')[1]
+        p = QuestionParser(finding_vocab=VINDR_VOCAB, llm_client=mock_llm)
+        q = p.parse("Is there Cardiomegaly?")
+        assert q.parser_tier == "rule"
+        assert len(calls) == 0
+
+    def test_garbage_llm_response_keeps_rule_default(self):
+        mock_llm = lambda prompt: "I don't understand the question"
+        p = QuestionParser(finding_vocab=VINDR_VOCAB, llm_client=mock_llm)
+        q = p.parse("Explain the cardiac shadow")
+        assert q.type == "relational"
+        assert q.parse_confidence == 0.0
+        assert q.parser_tier == "rule"
+
+    def test_hallucinated_type_rejected(self):
+        mock_llm = lambda prompt: '{"type": "diagnostic", "target": null}'
+        p = QuestionParser(finding_vocab=VINDR_VOCAB, llm_client=mock_llm)
+        q = p.parse("Explain the cardiac shadow")
+        assert q.type == "relational"
+        assert q.parser_tier == "rule"
+
+    def test_empty_llm_response_keeps_rule_default(self):
+        mock_llm = lambda prompt: ""
+        p = QuestionParser(finding_vocab=VINDR_VOCAB, llm_client=mock_llm)
+        q = p.parse("Explain the cardiac shadow")
+        assert q.type == "relational"
+        assert q.parser_tier == "rule"
+
+    def test_hallucinated_target_falls_back_to_vocab_search(self):
+        mock_llm = lambda prompt: '{"type": "existential", "target": "FakeDisease"}'
+        p = QuestionParser(finding_vocab=VINDR_VOCAB, llm_client=mock_llm)
+        q = p.parse("Can you see Cardiomegaly here?")
+        assert q.type == "existential"
+        assert q.target == "Cardiomegaly"
+        assert q.parser_tier == "llm"
+
+
 class TestOutputContract:
     def test_raw_question_preserved(self, parser):
         raw = "Does this X-ray show Cardiomegaly?"
