@@ -10,7 +10,11 @@ Usage:
 import argparse
 import json
 import numpy as np
+import sys
 from pathlib import Path
+
+# Add project root to sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 def build_cases(vqa_path, image_dir):
@@ -69,6 +73,7 @@ def main():
     parser.add_argument("--images", default="data/vindr_cxr_vqa/train")
     parser.add_argument("--out-index", default="data/rag/vindr_index.faiss")
     parser.add_argument("--out-cases", default="data/rag/vindr_cases.jsonl")
+    parser.add_argument("--encoder", default="weights/BiomedCLIP")
     parser.add_argument("--device", default="cuda")
     args = parser.parse_args()
 
@@ -78,7 +83,7 @@ def main():
 
     print("Loading encoder...")
     from src.retrieval.encoder import load_encoder
-    encoder = load_encoder(device=args.device)
+    encoder = load_encoder(model_path=args.encoder, device=args.device)
 
     print("Encoding images...")
     embeddings = encode_cases(cases, encoder)

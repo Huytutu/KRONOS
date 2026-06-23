@@ -1,7 +1,7 @@
 """Frozen BiomedCLIP image encoder — lazy imports, GPU optional."""
 import numpy as np
 
-BIOMEDCLIP_MODEL = "microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224"
+DEFAULT_MODEL_PATH = "weights/BiomedCLIP"
 
 
 class CXREncoder:
@@ -20,12 +20,12 @@ class CXREncoder:
         return emb
 
 
-def load_encoder(device="cuda"):
+def load_encoder(model_path=DEFAULT_MODEL_PATH, device="cuda"):
     import torch
     import open_clip
 
     model, preprocess = open_clip.create_model_from_pretrained(
-        "hf-hub:" + BIOMEDCLIP_MODEL, device=device,
+        "hf-hub:" + model_path, device=device,
     )
     model.eval()
     return CXREncoder(model, preprocess, device)
