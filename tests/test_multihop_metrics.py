@@ -102,3 +102,50 @@ def test_grade_aggregate(dag):
     assert m["grounding_rate"] == 1.0
     assert m["hallucination_rate"] == 0.0
     assert m["n"] == 2
+
+
+# --- deletion / load-bearing test ---
+
+def test_common_causes_nonempty(dag):
+    assert dag.common_causes("Pleural thickening", "Pneumothorax")
+
+
+def test_deletion_holds_when_all_supports_removed(dag):
+    from src.eval.multihop_metrics import deletion_holds
+    a, b = "Pleural thickening", "Pneumothorax"
+    causes = dag.common_causes(a, b)
+    support = [[c, a] for c in causes] + [[c, b] for c in causes]
+    item = {"finding_a": a, "finding_b": b, "answer": "Yes",
+            "single_cause": len(causes) == 1, "support_edges": support}
+    assert deletion_holds(item, dag) is True
+
+
+def test_partial_deletion_does_not_hold(dag):
+    from src.eval.multihop_metrics import deletion_holds
+    a, b = "Pleural thickening", "Pneumothorax"
+    causes = dag.common_causes(a, b)
+    if len(causes) < 2:
+        pytest.skip("needs a pair with >= 2 common causes")
+    support = [[causes[0], a], [causes[0], b]]  # remove only one of several causes
+    item = {"finding_a": a, "finding_b": b, "answer": "Yes",
+            "single_cause": False, "support_edges": support}
+    assert deletion_holds(item, dag) is False
+
+
+def test_ablation_does_not_mutate_kg(dag):
+    before = dag.causal.number_of_edges()
+    dag.common_causes("Pleural thickening", "Pneumothorax",
+                      removed=[["sarcoidosis", "Pneumothorax"]])
+    assert dag.causal.number_of_edges() == before
+
+
+def test_grade_reports_load_bearing(dag):
+    from src.eval.multihop_metrics import grade
+    a, b = "Pleural thickening", "Pneumothorax"
+    causes = dag.common_causes(a, b)
+    support = [[c, a] for c in causes] + [[c, b] for c in causes]
+    item = {"id": "y1", "finding_a": a, "finding_b": b, "answer": "Yes",
+            "gold_causes": causes, "support_edges": support,
+            "hops": 2, "single_cause": True}
+    m = grade([item], [{"id": "y1", "answer": "Yes", "cause": causes[0], "trace": []}], dag)
+    assert m["load_bearing_rate"] == 1.0

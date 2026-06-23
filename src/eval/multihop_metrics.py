@@ -41,21 +41,34 @@ def _trace_supports(trace, item, dag):
     return item["finding_a"].lower() in targets and item["finding_b"].lower() in targets
 
 
+def deletion_holds(item, dag):
+    """Load-bearing check: removing the item's support_edges leaves no common cause
+    (the gold 'Yes' depended on that chain, not a guess)."""
+    return not dag.common_causes(item["finding_a"], item["finding_b"],
+                                 removed=item.get("support_edges"))
+
+
+def load_bearing_rate(items, dag):
+    """Fraction of single-cause Yes items whose answer is path-dependent (deletion flips it)."""
+    single = [it for it in items if it["answer"] == "Yes" and it.get("single_cause")]
+    return _rate([deletion_holds(it, dag) for it in single])
+
+
 def grade(items, preds, dag):
-    """Aggregate the four non-deletion metrics (denominators per multihop_qa_SPEC §5)."""
+    """Aggregate the five metrics (denominators per multihop_qa_SPEC §5)."""
     by_id = {p["id"]: p for p in preds}
     flags = [(it, grade_item(it, by_id.get(it["id"], {}), dag)) for it in items]
 
-    n = len(items)
     gold_yes = [f for it, f in flags if it["answer"] == "Yes"]
     pred_yes = [f for it, f in flags if by_id.get(it["id"], {}).get("answer") == "Yes"]
 
     return {
-        "n": n,
+        "n": len(items),
         "binary_accuracy": _rate([f["binary_correct"] for _, f in flags]),
         "name_accuracy": _rate([f["name_correct"] for f in gold_yes]),
         "grounding_rate": _rate([f["grounded"] for f in pred_yes]),
         "hallucination_rate": _rate([f["hallucinated"] for f in pred_yes]),
+        "load_bearing_rate": load_bearing_rate(items, dag),
     }
 
 

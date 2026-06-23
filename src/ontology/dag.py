@@ -203,6 +203,27 @@ class OntologyDAG:
         b = self._resolve_rgo(tgt)
         return a is not None and b is not None and self.causal.has_edge(a, b)
 
+    def common_causes(self, a, b, removed=None):
+        """Disorders that may_cause both a and b (the shared-cause set), as labels.
+        `removed` optionally drops edges [[src, tgt], ...] first, on a COPY — the
+        load-bearing/deletion test relies on this not mutating the live graph."""
+        if self.causal is None:
+            return []
+        ai = self._resolve_rgo(a)
+        bi = self._resolve_rgo(b)
+        if ai is None or bi is None:
+            return []
+        graph = self.causal
+        if removed:
+            graph = self.causal.copy()
+            for src, tgt in removed:
+                sid = self._resolve_rgo(src)
+                tid = self._resolve_rgo(tgt)
+                if sid is not None and tid is not None and graph.has_edge(sid, tid):
+                    graph.remove_edge(sid, tid)
+        common = set(graph.predecessors(ai)) & set(graph.predecessors(bi))
+        return [self.causal.nodes[n]["label"] for n in common]
+
     # --- closed-world negation support ---
 
     def get_exclusion_list(self, finding_name):
