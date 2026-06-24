@@ -1,5 +1,6 @@
 """Symbolic tool layer — thin wrappers turning OntologyDAG methods into Action → Observation."""
 from src.contracts import Action, Observation
+from src.tools.visual import _parse_bbox
 
 
 def run_tool(action, facts, dag, img_wh):
@@ -17,14 +18,18 @@ def run_tool(action, facts, dag, img_wh):
         return Observation(result=result, ok=True)
 
     if tool == "anatomy_of":
-        bbox = tuple(args["bbox"])
+        bbox = _parse_bbox(args.get("bbox"))
+        if bbox is None:
+            return Observation(result=None, ok=False)
         zone = dag.anatomy_of(bbox, img_wh[0], img_wh[1])
         if zone:
             return Observation(result=zone, ok=True)
         return Observation(result=None, ok=False)
 
     if tool == "compose_laterality":
-        bbox = tuple(args["bbox"])
+        bbox = _parse_bbox(args.get("bbox"))
+        if bbox is None:
+            return Observation(result=None, ok=False)
         lat = dag.compose_laterality(bbox, img_wh[0], img_wh[1])
         return Observation(result=lat, ok=True)
 

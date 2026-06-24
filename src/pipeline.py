@@ -38,7 +38,7 @@ def run_with_facts(question, facts, dag, agent=None, budget=20, k=3, img_wh=None
 def run(image_path, question, dag, detector, agent, budget=20, k=3, retriever=None):
     """Full end-to-end: load image → detect → parse → search → result.
 
-    Requires detector (YOLO) and agent (LLaVA-Med or Mock).
+    Requires detector (YOLO) and agent.
     """
     from PIL import Image
 

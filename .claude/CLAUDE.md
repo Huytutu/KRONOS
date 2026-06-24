@@ -1,5 +1,15 @@
-# CLAUDE.md
+# CLAUDE.md / AGENTS.md
 
+Always use the `medcxr` conda environment.
+
+## Build command
+No compile/build step needed (pure Python project).
+
+## Test command
+- Run CPU tests: `conda run -n medcxr python -m pytest tests/ -m "not gpu"`
+- Run GPU tests: `conda run -n medcxr python -m pytest tests/ -m "gpu"`
+
+## Behavioral Guidelines
 Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
 
 **Top priority:** code must be easy to understand, easy to read, and easy for an engineer to follow. When any guideline conflicts with clarity, clarity wins.
