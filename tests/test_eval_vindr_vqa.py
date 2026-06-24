@@ -75,12 +75,14 @@ def _make_items():
 def test_grade_batch_aggregation():
     items = _make_items()
     predictions = [f"A{i}" for i in range(6)]
-    # Judge: first 4 correct, last 2 incorrect
+    # call_count[0] tracks calls; first call is the smoke-test probe,
+    # then 6 grading calls: items 0-3 → CORRECT, items 4-5 → INCORRECT.
     call_count = [0]
     def mock_llm(prompt):
         idx = call_count[0]
         call_count[0] += 1
-        return "CORRECT" if idx < 4 else "INCORRECT"
+        # idx 0 = smoke-test, idx 1-4 = CORRECT, idx 5-6 = INCORRECT
+        return "CORRECT" if idx < 5 else "INCORRECT"
 
     result = grade_batch(items, predictions, mock_llm)
 

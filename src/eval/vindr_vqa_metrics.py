@@ -30,6 +30,15 @@ def judge_answer(question, prediction, ground_truth, llm_fn):
 
 
 def grade_batch(items, predictions, llm_fn):
+    # Smoke-test the judge before grading the full batch
+    test_resp = llm_fn("Reply with exactly CORRECT")
+    if not test_resp or "CORRECT" not in test_resp.upper():
+        import warnings
+        warnings.warn(
+            "LLM judge returned empty/invalid response — is GEMINI_API_KEY set? "
+            "All scores will be 0.", stacklevel=2,
+        )
+
     scores = []
     for item, pred in zip(items, predictions):
         score = judge_answer(item.question, pred, item.answer, llm_fn)
