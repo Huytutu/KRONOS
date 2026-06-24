@@ -87,6 +87,47 @@ def test_no_item_handled(dag):
     assert not f["name_correct"] and not f["hallucinated"] and not f["grounded"]
 
 
+# --- multi-hop chain grounding (T2.1) ---
+
+def _cm_pn_item(**over):
+    item = {"id": "y2", "finding_a": "Cardiomegaly", "finding_b": "Pneumothorax",
+            "answer": "Yes", "gold_causes": ["scleroderma"], "support_edges": [],
+            "hops": 3, "single_cause": False}
+    item.update(over)
+    return item
+
+
+def test_grounded_accepts_multihop_chain(dag):
+    """One pivot (scleroderma) reaches both findings — directly to Cardiomegaly
+    and via lung abscess to Pneumothorax — so the chain is grounded."""
+    from src.eval.multihop_metrics import grade_item
+    trace = [["scleroderma", "Cardiomegaly"],
+             ["scleroderma", "lung abscess"],
+             ["lung abscess", "Pneumothorax"]]
+    pred = {"id": "y2", "answer": "Yes", "cause": "scleroderma", "trace": trace}
+    assert grade_item(_cm_pn_item(), pred, dag)["grounded"]
+
+
+def test_grounded_rejects_disconnected_trace(dag):
+    """Two real edges that do NOT share a cause are not a shared-cause chain,
+    even though both findings appear as edge targets."""
+    from src.eval.multihop_metrics import grade_item
+    trace = [["scleroderma", "Cardiomegaly"],
+             ["esophageal carcinoma", "Pneumothorax"]]
+    pred = {"id": "y2", "answer": "Yes", "cause": "scleroderma", "trace": trace}
+    assert not grade_item(_cm_pn_item(), pred, dag)["grounded"]
+
+
+def test_grounded_rejects_chain_with_fabricated_edge(dag):
+    """One non-existent edge breaks grounding even if the rest is real."""
+    from src.eval.multihop_metrics import grade_item
+    trace = [["scleroderma", "Cardiomegaly"],
+             ["scleroderma", "madeupitis"],
+             ["madeupitis", "Pneumothorax"]]
+    pred = {"id": "y2", "answer": "Yes", "cause": "scleroderma", "trace": trace}
+    assert not grade_item(_cm_pn_item(), pred, dag)["grounded"]
+
+
 # --- aggregate ---
 
 def test_grade_aggregate(dag):
