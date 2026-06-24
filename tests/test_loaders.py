@@ -21,9 +21,9 @@ def test_qaitem_core_fields():
     assert it.meta == {}            # meta defaults to empty, never shared between items
 
 
-def test_registry_lists_all_three():
+def test_registry_lists_all():
     from src.data.loaders import LOADERS
-    assert set(LOADERS) == {"multihop", "vindr_vqa", "chestagentbench"}
+    assert set(LOADERS) == {"multihop", "vindr_vqa", "slake", "chestagentbench"}
 
 
 # --- multihop ---
