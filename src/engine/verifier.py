@@ -78,10 +78,22 @@ def explain(node, query, dag):
 def _progress_existential(node, query, dag):
     if _has_witness(node, dag) or _has_direct_match(node, query, dag):
         return 1.0
-    target_slug = dag.get_node_by_name(query.target) if query.target else None
-    if target_slug and dag.get_node(target_slug):
-        return 0.2
-    return 0.1
+    # Partial credit for how much of the evidence has been examined, so the
+    # frontier can rank a node that checked more facts above one that checked few.
+    return 0.1 + _fraction_facts_checked(node, dag) * 0.7
+
+
+def _fraction_facts_checked(node, dag):
+    """Fraction of detected facts that have been the source of an is_a action."""
+    if not node.state_facts:
+        return 0.0
+    fact_slugs = {dag.resolve_slug(f.concept) for f in node.state_facts}
+    checked = {
+        dag.resolve_slug(action.args.get("node", ""))
+        for action, obs in node.history
+        if action.tool == "is_a"
+    }
+    return len(fact_slugs & checked) / len(fact_slugs)
 
 
 def _verify_existential(node, query, dag):
@@ -112,16 +124,28 @@ def _progress_negation(node, query, dag):
                 return 0.0
         return 0.1
 
+    if not excl_list:
+        return 0.0
+
     fact_slugs = {dag.get_node_by_name(f.concept) for f in node.state_facts}
     for slug in excl_list:
         if slug in fact_slugs:
-            return 0.0
+            return 0.0    # a finding in the exclusion list is present → "No X" is false
 
-    checked = len(excl_list)
-    total = len(excl_list)
-    if total == 0:
-        return 0.0
-    return checked / total
+    # Real gradient: how many exclusion items the agent has actually checked,
+    # reaching 1.0 only when every item has been ruled out.
+    checked = _exclusion_items_checked(node, excl_list)
+    return 0.1 + (checked / len(excl_list)) * 0.9
+
+
+def _exclusion_items_checked(node, excl_list):
+    """How many exclusion items the agent has explicitly checked with an is_a."""
+    checked = {
+        action.args.get("node")
+        for action, obs in node.history
+        if action.tool == "is_a"
+    }
+    return sum(1 for slug in excl_list if slug in checked)
 
 
 def _verify_negation(node, query, dag):

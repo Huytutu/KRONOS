@@ -104,6 +104,44 @@ def test_progress_relational_resolved(dag):
     assert closure_progress(node, query, dag) == 1.0
 
 
+def test_progress_existential_has_gradient(dag):
+    """Checking more facts scores strictly higher, so best-first can rank
+    competing branches (the value is not a flat 0.2)."""
+    from src.engine.verifier import closure_progress
+    facts = [_fact("Nodule/Mass"), _fact("Consolidation")]
+    query = _query("existential", target="Cardiomegaly")
+
+    none_checked = TreeNode(state_facts=facts, history=[])
+    one_checked = TreeNode(state_facts=facts, history=[
+        (_action("is_a", node="nodule_mass", target="cardiomegaly"), _obs(None, ok=False)),
+    ])
+    both_checked = TreeNode(state_facts=facts, history=[
+        (_action("is_a", node="nodule_mass", target="cardiomegaly"), _obs(None, ok=False)),
+        (_action("is_a", node="consolidation", target="cardiomegaly"), _obs(None, ok=False)),
+    ])
+    p0 = closure_progress(none_checked, query, dag)
+    p1 = closure_progress(one_checked, query, dag)
+    p2 = closure_progress(both_checked, query, dag)
+    assert p0 < p1 < p2 < 1.0
+
+
+def test_progress_negation_has_gradient(dag):
+    """After the exclusion list is fetched, checking more items scores higher."""
+    from src.engine.verifier import closure_progress
+    query = _query("negation", target="Consolidation")
+    excl = ["consolidation", "infiltration", "lung_opacity"]
+    fetched = (_action("get_exclusion_list", name="Consolidation"), _obs(excl))
+
+    none_checked = TreeNode(state_facts=[], history=[fetched])
+    one_checked = TreeNode(state_facts=[], history=[
+        fetched,
+        (_action("is_a", node="consolidation", target="consolidation"), _obs(None, ok=False)),
+    ])
+    p0 = closure_progress(none_checked, query, dag)
+    p1 = closure_progress(one_checked, query, dag)
+    assert p0 < p1
+
+
 def test_progress_counting(dag):
     from src.engine.verifier import closure_progress
     facts = [_fact("Cardiomegaly"), _fact("Consolidation"), _fact("Pleural effusion")]
