@@ -16,7 +16,8 @@ DEFAULT_IMG_WH = (2304, 2880)
 
 
 def search(query, facts, dag, agent, budget=20, k=3, img_wh=None,
-           image=None, detector_fn=None, vlm_fn=None, retriever=None):
+           image=None, detector_fn=None, vlm_fn=None, retriever=None,
+           slake_kg=None):
     if img_wh is None:
         img_wh = DEFAULT_IMG_WH
 
@@ -56,7 +57,7 @@ def search(query, facts, dag, agent, budget=20, k=3, img_wh=None,
 
             obs = run_tool(proposal, node.state_facts, dag, img_wh,
                           image=image, detector_fn=detector_fn, vlm_fn=vlm_fn,
-                          retriever=retriever)
+                          retriever=retriever, slake_kg=slake_kg)
             new_history = list(node.history) + [(proposal, obs)]
             new_facts = list(node.state_facts)
 

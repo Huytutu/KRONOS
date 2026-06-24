@@ -35,7 +35,8 @@ def run_with_facts(question, facts, dag, agent=None, budget=20, k=3, img_wh=None
                   retriever=retriever)
 
 
-def run(image_path, question, dag, detector, agent, budget=20, k=3, retriever=None):
+def run(image_path, question, dag, detector, agent, budget=20, k=3, retriever=None,
+        slake_kg=None):
     """Full end-to-end: load image → detect → parse → search → result.
 
     Requires detector (YOLO) and agent.
@@ -68,5 +69,5 @@ def run(image_path, question, dag, detector, agent, budget=20, k=3, retriever=No
     return search(
         query, facts, dag, agent, budget=budget, k=k,
         img_wh=img_wh, image=image, detector_fn=detector_fn, vlm_fn=vlm_fn,
-        retriever=retriever,
+        retriever=retriever, slake_kg=slake_kg,
     )

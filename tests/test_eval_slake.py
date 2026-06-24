@@ -124,3 +124,94 @@ def test_load_slake_filters_xray(tmp_path):
     assert items[0].dataset == "slake"
     assert items[0].meta["content_type"] == "Organ"
     assert items[0].meta["modality"] == "X-Ray"
+
+
+# ── Task 4: grading + CLI tests ──
+
+from scripts.eval_slake import exact_match, grade
+
+
+def test_exact_match():
+    assert exact_match("Heart", "heart") is True
+    assert exact_match("Yes", "No") is False
+    assert exact_match(" Lung ", "lung") is True
+    assert exact_match("MRI", "mri") is True
+
+
+def test_grade_aggregation():
+    items = [
+        QAItem(id="a", dataset="slake", image="x.jpg", question="Q1", answer="Heart",
+               meta={"content_type": "Organ", "answer_type": "OPEN"}),
+        QAItem(id="b", dataset="slake", image="x.jpg", question="Q2", answer="Yes",
+               meta={"content_type": "KG", "answer_type": "CLOSED"}),
+        QAItem(id="c", dataset="slake", image="x.jpg", question="Q3", answer="Lung",
+               meta={"content_type": "Organ", "answer_type": "OPEN"}),
+        QAItem(id="d", dataset="slake", image="x.jpg", question="Q4", answer="No",
+               meta={"content_type": "Abnormality", "answer_type": "CLOSED"}),
+    ]
+    # Mock SearchResults: items 0,1 correct, items 2,3 wrong
+    def _sr(answer):
+        sr = MagicMock()
+        sr.answer = answer
+        sr.tier = "A"
+        sr.conf = 0.9
+        sr.path = []
+        return sr
+
+    results = [_sr("Heart"), _sr("Yes"), _sr("Brain"), _sr("Yes")]
+    report = grade(items, results)
+
+    assert report["n"] == 4
+    assert report["overall_accuracy"] == 0.5
+    assert report["by_content_type"]["Organ"]["accuracy"] == 0.5
+    assert report["by_content_type"]["KG"]["accuracy"] == 1.0
+    assert report["by_answer_type"]["OPEN"]["n"] == 2
+    assert report["by_answer_type"]["CLOSED"]["n"] == 2
+
+
+def test_cli_smoke(tmp_path):
+    data = [
+        {"img_id": 1, "img_name": "xmlab1/source.jpg", "question": "What organ?",
+         "answer": "Heart", "q_lang": "en", "location": "Chest",
+         "modality": "X-Ray", "answer_type": "OPEN", "base_type": "vqa",
+         "content_type": "Organ", "triple": ["vhead", "_", "_"], "qid": 0},
+        {"img_id": 2, "img_name": "xmlab2/source.jpg", "question": "Is there disease?",
+         "answer": "Yes", "q_lang": "en", "location": "Chest",
+         "modality": "X-Ray", "answer_type": "CLOSED", "base_type": "vqa",
+         "content_type": "Abnormality", "triple": ["vhead", "_", "_"], "qid": 1},
+    ]
+    data_path = tmp_path / "test.json"
+    data_path.write_text(json.dumps(data), encoding="utf-8")
+    out_path = tmp_path / "report.json"
+
+    def _sr(answer):
+        sr = MagicMock()
+        sr.answer = answer
+        sr.tier = "A"
+        sr.conf = 0.9
+        sr.path = []
+        return sr
+
+    with patch("scripts.eval_slake.init_pipeline") as mock_init, \
+         patch("scripts.eval_slake.run_predictions", return_value=[_sr("Heart"), _sr("Yes")]):
+        mock_init.return_value = (MagicMock(), MagicMock(), MagicMock())
+
+        from scripts.eval_slake import main
+        import sys
+        orig_argv = sys.argv
+        sys.argv = ["eval_slake.py",
+                     "--data", str(data_path),
+                     "--image-dir", str(tmp_path),
+                     "--kg-dir", str(tmp_path),
+                     "--limit", "2",
+                     "--out", str(out_path)]
+        try:
+            main()
+        finally:
+            sys.argv = orig_argv
+
+    assert out_path.exists()
+    report = json.loads(out_path.read_text(encoding="utf-8"))
+    assert report["n"] == 2
+    assert report["overall_accuracy"] == 1.0
+    assert "trace" in report["details"][0]
