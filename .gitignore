@@ -12,3 +12,7 @@ data/rag/
 data/*.owl
 # Generated eval reports
 results/
+# Third-party repos (vendored, not tracked)
+third_parties/
+# Large external datasets
+data/PadChest/
