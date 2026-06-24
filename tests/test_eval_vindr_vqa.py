@@ -90,3 +90,59 @@ def test_grade_batch_aggregation():
     assert result["by_type"]["What"]["accuracy"] == 0.0
     assert result["by_difficulty"]["Easy"]["n"] == 3
     assert result["by_difficulty"]["Medium"]["n"] == 3
+
+
+# ── Task 3: CLI smoke test ──
+
+def test_cli_smoke(tmp_path):
+    """Mock pipeline + Gemini, run CLI with --limit 2, verify JSON report."""
+    # Write a minimal vqa.json
+    vqa_data = [
+        {
+            "image_id": "fake_001",
+            "num_questions": 2,
+            "vqa": [
+                {"question": "Is there Cardiomegaly?", "answer": "Yes",
+                 "type": "Yes_No", "difficulty": "Easy",
+                 "gt_finding": "Cardiomegaly", "gt_location": "<loc_0_0_1_1>",
+                 "reason": "test"},
+                {"question": "Where is the Cardiomegaly?", "answer": "Center",
+                 "type": "Where", "difficulty": "Medium",
+                 "gt_finding": "Cardiomegaly", "gt_location": "<loc_0_0_1_1>",
+                 "reason": "test"},
+            ],
+        }
+    ]
+    vqa_path = tmp_path / "vqa.json"
+    vqa_path.write_text(json.dumps(vqa_data), encoding="utf-8")
+    out_path = tmp_path / "report.json"
+
+    # Create a fake image so pipeline.run doesn't fail on missing file
+    img_dir = tmp_path / "images"
+    img_dir.mkdir()
+
+    mock_result = MagicMock()
+    mock_result.answer = "Yes, Cardiomegaly is present"
+
+    with patch("scripts.eval_vindr_vqa.init_pipeline") as mock_init, \
+         patch("scripts.eval_vindr_vqa.run_predictions", return_value=["Yes", "Center"]), \
+         patch("scripts.eval_vindr_vqa.gemini_complete", side_effect=lambda p: "CORRECT"):
+        mock_init.return_value = (MagicMock(), MagicMock(), MagicMock())
+
+        from scripts.eval_vindr_vqa import main
+        import sys
+        orig_argv = sys.argv
+        sys.argv = ["eval_vindr_vqa.py",
+                     "--vqa", str(vqa_path),
+                     "--image-dir", str(img_dir),
+                     "--limit", "2",
+                     "--out", str(out_path)]
+        try:
+            main()
+        finally:
+            sys.argv = orig_argv
+
+    assert out_path.exists()
+    report = json.loads(out_path.read_text(encoding="utf-8"))
+    assert report["n"] == 2
+    assert report["overall_accuracy"] == 1.0
