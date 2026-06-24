@@ -6,7 +6,7 @@ system at a time, then grade with scripts/eval_multihop.py.
 Usage:
   python scripts/run_multihop.py --system kronos                 # full qa.jsonl
   python scripts/run_multihop.py --system cot --limit 50         # quick subset
-Systems: kronos | zero_shot | cot | react | single_hop | no_reflection | mock
+Systems: kronos | zero_shot | cot | react | single_hop | no_prune | mock
 """
 import argparse
 import json
@@ -35,9 +35,9 @@ SYSTEMS = {
     "zero_shot":     lambda it, dag, gen: P.predict_zero_shot(it, gen, load_image(it)),
     "cot":           lambda it, dag, gen: P.predict_cot(it, gen, load_image(it)),
     "react":         lambda it, dag, gen: P.predict_react(it, dag, gen, load_image(it)),
-    "kronos":        lambda it, dag, gen: P.predict_kronos(it, dag, gen, load_image(it)),
-    "single_hop":    lambda it, dag, gen: P.predict_kronos(it, dag, gen, load_image(it), multi_hop=False),
-    "no_reflection": lambda it, dag, gen: P.predict_kronos(it, dag, gen, load_image(it), reflection=False),
+    "kronos":     lambda it, dag, gen: P.predict_kronos(it, dag, gen, load_image(it)),
+    "single_hop": lambda it, dag, gen: P.predict_kronos(it, dag, gen, load_image(it), max_depth=1),
+    "no_prune":   lambda it, dag, gen: P.predict_kronos(it, dag, gen, load_image(it), prune=False),
 }
 
 

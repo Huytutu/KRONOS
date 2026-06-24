@@ -54,10 +54,6 @@ def _no():
     return {"answer": "No", "cause": None, "trace": []}
 
 
-def _verified(cause, a, b):
-    return {"answer": "Yes", "cause": cause, "trace": [[cause, a], [cause, b]]}
-
-
 def predict_zero_shot(item, gen, image=None):
     """MedGemma direct answer. No trace -> ungrounded by design."""
     answer, cause = parse_yes_no_cause(gen(build_sc_prompt(item, "zero_shot"), image))
@@ -70,31 +66,73 @@ def predict_cot(item, gen, image=None):
     return {"answer": answer, "cause": cause, "trace": []}
 
 
-def predict_kronos(item, dag, gen, image=None, multi_hop=True, reflection=True):
-    """Model-in-loop, KG-gated: MedGemma proposes a cause; it is accepted ONLY if
-    the KG verifies it causes both findings. On rejection, reflect once, then fall
-    back to multi-hop graph search. Every Yes is KG-verified (grounded by design).
-    Ablations: multi_hop=False (no graph fallback), reflection=False (single attempt)."""
+def predict_kronos(item, dag, gen, image=None, *,
+                   beam_width=3, max_depth=3, prune=True):
+    """Think-on-Graph over the causal KG. Beam-search backward from finding_a along
+    caused_by edges; the LLM ranks which paths to explore deeper (exploration only),
+    while the KG verifier alone decides the answer — a path is accepted iff its head
+    also causes finding_b. The path through the KG is the trace, so every Yes is
+    grounded by construction and the LLM can never inject a fabricated edge.
+    Ablations: max_depth=1 (single-hop only), prune=False (no LLM pruning)."""
     a, b = item["finding_a"], item["finding_b"]
+    beam = [[a]]
+    visited = {a.lower()}
 
-    _, cand = parse_yes_no_cause(gen(build_sc_prompt(item, "zero_shot"), image))
-    if cand and dag.causal_edge(cand, a) and dag.causal_edge(cand, b):
-        return _verified(cand, a, b)
-
-    if reflection:
-        prompt = build_sc_prompt(item, "zero_shot") + (
-            f"\n(Note: '{cand}' does not cause both {a} and {b} in the reference. "
-            "Propose another single condition that causes both, or answer No.)")
-        _, cand2 = parse_yes_no_cause(gen(prompt, image))
-        if cand2 and dag.causal_edge(cand2, a) and dag.causal_edge(cand2, b):
-            return _verified(cand2, a, b)
-
-    if multi_hop:
-        for d in dag.causal_neighbors(a, "caused_by"):
-            if dag.causal_edge(d, b):
-                return _verified(d, a, b)
+    for depth in range(max_depth):
+        candidates = _expand(beam, dag, visited)
+        if not candidates:
+            break
+        # Verifier decides: a path whose head also causes finding_b is a shared cause.
+        hit = _first_shared_cause(candidates, b, dag)
+        if hit:
+            return _verified_chain(hit, b)
+        # LLM explores: keep the most plausible paths to expand at the next hop.
+        if depth < max_depth - 1:
+            beam = _explore(candidates, a, b, gen, image, beam_width, prune)
 
     return _no()
+
+
+def _expand(beam, dag, visited):
+    """One hop deeper: extend each path by the (unvisited) causes of its head."""
+    candidates = []
+    for path in beam:
+        for cause in dag.causal_neighbors(path[-1], "caused_by"):
+            if cause.lower() not in visited:
+                visited.add(cause.lower())
+                candidates.append(path + [cause])
+    return candidates
+
+
+def _first_shared_cause(candidates, b, dag):
+    """The verifier: first path whose head also causes finding_b, or None."""
+    for path in candidates:
+        if dag.causal_edge(path[-1], b):
+            return path
+    return None
+
+
+def _explore(candidates, a, b, gen, image, n, prune):
+    """The LLM ranks candidate paths and keeps the top-n to expand next. Pure
+    exploration — it never decides the answer. prune=False skips the LLM."""
+    if not prune:
+        return candidates[:n]
+    heads = sorted({path[-1] for path in candidates})
+    prompt = (f"Chest X-ray shows {a} and {b}. Which of these conditions most likely "
+              f"explains both? Options: {', '.join(heads)}. List the top {n} by name.")
+    text = (gen(prompt, image) or "").lower()
+    ranked = [p for p in candidates if p[-1].lower() in text]
+    return (ranked or candidates)[:n]
+
+
+def _verified_chain(path, b):
+    """Build the KG trace from a path [finding_a, c1, ..., pivot]: consecutive
+    (x, y) means y causes x, so emit y->x toward finding_a, then pivot -> finding_b.
+    The pivot (shared cause) is the named answer."""
+    trace = [[path[i + 1], path[i]] for i in range(len(path) - 1)]
+    pivot = path[-1]
+    trace.append([pivot, b])
+    return {"answer": "Yes", "cause": pivot, "trace": trace}
 
 
 def predict_react(item, dag, gen, image=None):
