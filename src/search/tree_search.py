@@ -130,4 +130,31 @@ def _derive_answer(node, query):
         count = len({f.concept for f in node.state_facts})
         return str(count)
 
+    if qtype == "shared_cause":
+        return _derive_shared_cause(node, query)
+
     return ""
+
+
+def _derive_shared_cause(node, query):
+    from src.engine.verifier import _find_shared_cause
+    a = query.constraints.get("finding_a", "")
+    b = query.constraints.get("finding_b", "")
+    # Import dag from the verifier's perspective — we need the actual dag
+    # but _derive_answer doesn't receive it. Use the history to find shared causes.
+    # Since _find_shared_cause needs dag, and we don't have it here, we look at
+    # the intersection of neighbors results directly.
+    causes_a = set()
+    causes_b = set()
+    for action, obs in node.history:
+        if action.tool == "neighbors" and obs.ok and obs.result:
+            finding = action.args.get("node", "")
+            causes = {c.lower() for c in obs.result}
+            if finding.lower() == a.lower():
+                causes_a |= causes
+            elif finding.lower() == b.lower():
+                causes_b |= causes
+    overlap = causes_a & causes_b
+    if overlap:
+        return f"Yes, {sorted(overlap)[0]}"
+    return "No"

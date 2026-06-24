@@ -21,6 +21,8 @@ def closure_progress(node, query, dag):
         return _progress_relational(node, query, dag)
     if qtype == "counting":
         return 1.0
+    if qtype == "shared_cause":
+        return _progress_shared_cause(node, query, dag)
     return 0.0
 
 
@@ -42,6 +44,8 @@ def verify(node, query, dag):
         return _verify_relational(node, query, dag)
     if qtype == "counting":
         return _verify_counting(node, query, dag)
+    if qtype == "shared_cause":
+        return _verify_shared_cause(node, query, dag)
 
     return SearchResult(answer=node.answer or "", tier="ABSTAIN", path=path, conf=0.0)
 
@@ -198,6 +202,67 @@ def _verify_counting(node, query, dag):
     return SearchResult(
         answer=node.answer or str(count), tier="A", path=path, conf=1.0,
     )
+
+
+# --- shared_cause ---
+
+def _progress_shared_cause(node, query, dag):
+    a = query.constraints.get("finding_a", "")
+    b = query.constraints.get("finding_b", "")
+    shared = _find_shared_cause(node, a, b, dag)
+    if shared:
+        return 1.0
+    explored = _explored_sides(node)
+    if explored >= 2:
+        return 0.6
+    if explored >= 1:
+        return 0.3
+    return 0.1
+
+
+def _verify_shared_cause(node, query, dag):
+    path = list(node.history)
+    a = query.constraints.get("finding_a", "")
+    b = query.constraints.get("finding_b", "")
+    shared = _find_shared_cause(node, a, b, dag)
+    if shared:
+        cause = shared[0]
+        trace = [[cause, a], [cause, b]]
+        answer = f"Yes, {cause}"
+        return SearchResult(answer=answer, tier="A", path=path, conf=1.0)
+    if _explored_sides(node) >= 2:
+        return SearchResult(answer=node.answer or "No", tier="A", path=path, conf=0.8)
+    if node.answer:
+        return SearchResult(answer=node.answer, tier="B", path=path, conf=0.3)
+    return SearchResult(answer="", tier="ABSTAIN", path=path, conf=0.0)
+
+
+def _find_shared_cause(node, a, b, dag):
+    """Find causes that appear in neighbors results for BOTH findings."""
+    causes_a = set()
+    causes_b = set()
+    for action, obs in node.history:
+        if action.tool == "neighbors" and obs.ok and obs.result:
+            finding = action.args.get("node", "")
+            causes = {c.lower() for c in obs.result}
+            if finding.lower() == a.lower():
+                causes_a |= causes
+            elif finding.lower() == b.lower():
+                causes_b |= causes
+    overlap = causes_a & causes_b
+    # Verify each candidate is a real shared cause on the KG
+    verified = [c for c in overlap if dag.causal_edge(c, a) and dag.causal_edge(c, b)]
+    return verified
+
+
+def _explored_sides(node):
+    """How many distinct findings have been explored with neighbors.
+    Counts any neighbors call, even if it returned empty (still explored)."""
+    findings = set()
+    for action, obs in node.history:
+        if action.tool == "neighbors":
+            findings.add(action.args.get("node", "").lower())
+    return len(findings)
 
 
 # --- helpers ---

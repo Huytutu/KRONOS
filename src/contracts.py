@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Tuple, Literal, Optional, Dict, List, Any
 
-QType = Literal["existential", "negation", "relational", "counting", "open"]
+QType = Literal["existential", "negation", "relational", "counting", "open", "shared_cause"]
 
 Tier = Literal["A", "B", "ABSTAIN"]
 

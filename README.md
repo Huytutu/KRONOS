@@ -7,16 +7,11 @@ knowledge graph. A frozen VLM (MedGemma-4b) proposes actions; a deterministic
 verifier on a clinical ontology decides the answer. The verifier — never the
 model — is the authority.
 
-Two reasoning modes:
-
-- **Single-image VQA** — tree search over symbolic + visual tools, guided by the
-  verifier as a value function (inspired by Tree of Thoughts, but with a
-  deterministic verifier replacing LLM self-evaluation).
-- **Multi-hop shared-cause** — Think-on-Graph beam search over a causal KG
-  (RGO `may_cause`). The LLM prunes which edges to explore; the KG verifier
-  decides when a path connects both findings. The KG path *is* the trace.
-
-No model is fine-tuned. All models are frozen, prompt-only.
+One unified tree search engine handles all question types — from single-image
+VQA ("Is there Cardiomegaly?") to multi-hop shared-cause reasoning ("Can one
+condition cause both A and B?"). The verifier on the KG guides search and
+decides the answer; the LLM only proposes which tools to call or edges to
+explore. No model is fine-tuned.
 
 ---
 
@@ -28,17 +23,19 @@ Question    ─► rule-based parser          ─► Query(type, target)
                                                 │
               ┌─────────────────────────────────┘
               ▼
-  [Single-image VQA]                       [Multi-hop shared-cause]
-  Best-first tree search                   ToG beam search on causal KG
-  MedGemma proposes tool calls             MedGemma prunes candidate edges
-  Verifier scores nodes (reward)           Verifier checks: does path link a↔b?
-  Tools: is_a, anatomy_of, disjoint,       dag.causal_neighbors → expand
-         inspect, re_detect, retrieve      dag.causal_edge → terminate
-              │                                    │
-              ▼                                    ▼
-  SearchResult(answer, tier, trace)        {answer, cause, trace (KG path)}
-  Tier A = verified on KG                  Every edge in trace is a real KG edge
-  Tier B = perception-only                 Grounding + load-bearing tests
+  Unified best-first tree search (all question types)
+  MedGemma proposes tool calls / graph edges to explore
+  Verifier scores each node (closure_progress) + decides tier
+  Tools:
+    symbolic : is_a, disjoint, anatomy_of, compose_laterality,
+               get_exclusion_list, neighbors, find_path
+    visual   : inspect, re_detect, compare
+    retrieval: retrieve (BiomedCLIP + FAISS)
+              │
+              ▼
+  SearchResult(answer, tier={A,B,ABSTAIN}, trace)
+  Tier A = every step verified on KG (existential/negation/shared_cause/...)
+  Tier B = perception-only (open questions)
   ABSTAIN = insufficient evidence
 ```
 
@@ -80,7 +77,7 @@ data/
   multihop_qa/              # Generated shared-cause QA (qa.jsonl)
   rag/                      # BiomedCLIP FAISS index + case JSONL
 
-tests/                      # 369 deterministic tests (CPU) + 6 GPU integration tests
+tests/                      # 375 deterministic tests (CPU) + 6 GPU integration tests
 ```
 
 ## Quickstart
@@ -89,7 +86,7 @@ tests/                      # 369 deterministic tests (CPU) + 6 GPU integration 
 
 ```bash
 conda activate medcxr
-pytest tests/ -m "not gpu"     # 369 tests, ~25s
+pytest tests/ -m "not gpu"     # 375 tests, ~45s
 ```
 
 ### Multi-hop evaluation

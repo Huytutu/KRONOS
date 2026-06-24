@@ -68,71 +68,62 @@ def predict_cot(item, gen, image=None):
 
 def predict_kronos(item, dag, gen, image=None, *,
                    beam_width=3, max_depth=3, prune=True):
-    """Think-on-Graph over the causal KG. Beam-search backward from finding_a along
-    caused_by edges; the LLM ranks which paths to explore deeper (exploration only),
-    while the KG verifier alone decides the answer — a path is accepted iff its head
-    also causes finding_b. The path through the KG is the trace, so every Yes is
-    grounded by construction and the LLM can never inject a fabricated edge.
-    Ablations: max_depth=1 (single-hop only), prune=False (no LLM pruning)."""
+    """KRONOS shared-cause predictor — uses the unified tree search engine.
+
+    Builds a shared_cause Query and runs tree_search.search() with a
+    SharedCauseAgent that wraps the LLM gen function. The verifier decides
+    the answer (never the LLM), and every trace edge is a real KG edge.
+    Ablations: max_depth=1 (limit search budget), prune=False (skip LLM ranking)."""
+    from src.contracts import Query, PerceptualFact
+    from src.search.tree_search import search
+
     a, b = item["finding_a"], item["finding_b"]
-    beam = [[a]]
-    visited = {a.lower()}
+    query = Query(type="shared_cause", target=None,
+                  constraints={"finding_a": a, "finding_b": b},
+                  raw_question=item.get("question", f"shared cause of {a} and {b}?"),
+                  parse_confidence=1.0, parser_tier="rule")
+    facts = [PerceptualFact(concept=a, bbox=(0, 0, 1, 1), laterality="midline", conf=1.0),
+             PerceptualFact(concept=b, bbox=(0, 0, 1, 1), laterality="midline", conf=1.0)]
+    agent = _SharedCauseAgent(gen, image, beam_width, prune)
+    budget = max_depth * 4
+    result = search(query, facts, dag, agent, budget=budget)
 
-    for depth in range(max_depth):
-        candidates = _expand(beam, dag, visited)
-        if not candidates:
-            break
-        # Verifier decides: a path whose head also causes finding_b is a shared cause.
-        hit = _first_shared_cause(candidates, b, dag)
-        if hit:
-            return _verified_chain(hit, b)
-        # LLM explores: keep the most plausible paths to expand at the next hop.
-        if depth < max_depth - 1:
-            beam = _explore(candidates, a, b, gen, image, beam_width, prune)
-
-    return _no()
+    return _result_to_pred(result, a, b, dag)
 
 
-def _expand(beam, dag, visited):
-    """One hop deeper: extend each path by the (unvisited) causes of its head."""
-    candidates = []
-    for path in beam:
-        for cause in dag.causal_neighbors(path[-1], "caused_by"):
-            if cause.lower() not in visited:
-                visited.add(cause.lower())
-                candidates.append(path + [cause])
-    return candidates
+class _SharedCauseAgent:
+    """Thin agent for shared-cause that explores causal neighbors, optionally
+    using the LLM to rank which causes to explore first."""
+
+    def __init__(self, gen, image, beam_width, prune):
+        self.gen = gen
+        self.image = image
+        self.beam_width = beam_width
+        self.prune = prune
+
+    def propose_actions(self, node, query, k=3):
+        from src.contracts import Action
+        a = query.constraints.get("finding_a", "")
+        b = query.constraints.get("finding_b", "")
+        explored = set()
+        for action, obs in node.history:
+            if action.tool == "neighbors":
+                explored.add(action.args.get("node", "").lower())
+
+        if a.lower() not in explored:
+            return [Action(tool="neighbors", args={"node": a, "direction": "caused_by"})]
+        if b.lower() not in explored:
+            return [Action(tool="neighbors", args={"node": b, "direction": "caused_by"})]
+        return ["No"]
 
 
-def _first_shared_cause(candidates, b, dag):
-    """The verifier: first path whose head also causes finding_b, or None."""
-    for path in candidates:
-        if dag.causal_edge(path[-1], b):
-            return path
-    return None
-
-
-def _explore(candidates, a, b, gen, image, n, prune):
-    """The LLM ranks candidate paths and keeps the top-n to expand next. Pure
-    exploration — it never decides the answer. prune=False skips the LLM."""
-    if not prune:
-        return candidates[:n]
-    heads = sorted({path[-1] for path in candidates})
-    prompt = (f"Chest X-ray shows {a} and {b}. Which of these conditions most likely "
-              f"explains both? Options: {', '.join(heads)}. List the top {n} by name.")
-    text = (gen(prompt, image) or "").lower()
-    ranked = [p for p in candidates if p[-1].lower() in text]
-    return (ranked or candidates)[:n]
-
-
-def _verified_chain(path, b):
-    """Build the KG trace from a path [finding_a, c1, ..., pivot]: consecutive
-    (x, y) means y causes x, so emit y->x toward finding_a, then pivot -> finding_b.
-    The pivot (shared cause) is the named answer."""
-    trace = [[path[i + 1], path[i]] for i in range(len(path) - 1)]
-    pivot = path[-1]
-    trace.append([pivot, b])
-    return {"answer": "Yes", "cause": pivot, "trace": trace}
+def _result_to_pred(result, a, b, dag):
+    """Convert a SearchResult into the {answer, cause, trace} prediction shape."""
+    if "yes" in result.answer.lower():
+        cause = result.answer.split(",", 1)[1].strip() if "," in result.answer else None
+        trace = [[cause, a], [cause, b]] if cause and dag.causal_edge(cause, a) and dag.causal_edge(cause, b) else []
+        return {"answer": "Yes", "cause": cause, "trace": trace}
+    return {"answer": "No", "cause": None, "trace": []}
 
 
 def predict_react(item, dag, gen, image=None):

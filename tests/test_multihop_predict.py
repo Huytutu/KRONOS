@@ -183,13 +183,15 @@ def test_kronos_prune_false_skips_llm(dag):
     assert spy.calls == 0
 
 
-def test_kronos_prune_true_consults_llm(dag):
-    """With no shared cause at the first hop, the LLM is consulted to choose what
-    to expand next."""
+def test_kronos_unified_uses_tree_search(dag):
+    """predict_kronos now runs through the unified tree search engine,
+    not a standalone beam loop."""
     from src.eval.predictors import predict_kronos
-    spy = _FakeGen("...")
-    predict_kronos(_no_direct_item(), dag, spy, prune=True)
-    assert spy.calls >= 1
+    item = {"id": "y3", "finding_a": "Cardiomegaly", "finding_b": "Pneumothorax",
+            "answer": "Yes", "gold_causes": [], "support_edges": [], "single_cause": True}
+    p = predict_kronos(item, dag, _FakeGen("anything"))
+    assert p["answer"] == "Yes"
+    assert p["trace"] and all(dag.causal_edge(s, t) for s, t in p["trace"])
 
 
 def test_react_no_gate_can_hallucinate(dag):
