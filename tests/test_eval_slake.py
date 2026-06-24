@@ -73,6 +73,33 @@ def test_slake_kg_organs(mini_kg):
 from src.data.loaders import load_slake, QAItem
 
 
+# ── Task 3: dispatch slake_kg tool test ──
+
+from src.contracts import Action, Observation
+from src.tools.dispatch import run_tool
+
+
+def test_dispatch_slake_kg(mini_kg):
+    action = Action(tool="slake_kg", args={"entity": "Pneumonia", "relation": "cause"})
+    obs = run_tool(action, facts=[], dag=None, img_wh=None, slake_kg=mini_kg)
+    assert obs.ok is True
+    assert obs.result == "bacterial infection"
+
+
+def test_dispatch_slake_kg_missing(mini_kg):
+    action = Action(tool="slake_kg", args={"entity": "Unknown", "relation": "cause"})
+    obs = run_tool(action, facts=[], dag=None, img_wh=None, slake_kg=mini_kg)
+    assert obs.ok is False
+
+
+def test_dispatch_slake_kg_none():
+    action = Action(tool="slake_kg", args={"entity": "Pneumonia", "relation": "cause"})
+    obs = run_tool(action, facts=[], dag=None, img_wh=None, slake_kg=None)
+    assert obs.ok is False
+
+
+# ── Task 2: load_slake tests ──
+
 def test_load_slake_filters_xray(tmp_path):
     data = [
         {"img_id": 1, "img_name": "xmlab1/source.jpg", "question": "Q1",

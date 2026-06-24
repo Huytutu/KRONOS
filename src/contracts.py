@@ -10,6 +10,7 @@ ToolName = Literal[
     "get_exclusion_list", "retrieve",
     "neighbors", "find_path",
     "inspect", "re_detect", "compare",
+    "slake_kg",
 ]
 
 class PerceptualFact(BaseModel):
