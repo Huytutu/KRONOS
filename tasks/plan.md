@@ -1,29 +1,34 @@
-# VinDr-CXR VQA Evaluation — Build Plan
+# SLAKE VQA Evaluation — Build Plan
 
-Spec: `eval_vindr_vqa_SPEC.md`
+Spec: `eval_slake_SPEC.md`
 
 ## Tasks
 
-### Task 1: Gemini API client
-**File:** `src/llm/gemini_client.py`
-**What:** Thin wrapper around `google-generativeai` SDK. `complete(prompt, model)` function, API key from `GEMINI_API_KEY` env var, exponential backoff on rate limit (max 3 retries).
+### Task 1: SlakeKG loader
+**File:** `src/knowledge/slake_kg.py`
+**What:** Load 3 SLAKE KG CSVs into a dict-of-dicts. `lookup(entity, relation)` returns value or None. `diseases()` and `organs()` list entity names.
 **Depends on:** nothing
-**Acceptance:** Unit test with mocked `genai` calls passes. Function returns text string.
+**Acceptance:** Unit tests verify lookup hit, lookup miss, diseases/organs listing.
 
-### Task 2: VinDr VQA grading metrics
-**File:** `src/eval/vindr_vqa_metrics.py`
-**What:** `judge_answer(question, prediction, ground_truth, llm_fn) -> int` and `grade_batch(items, predictions, llm_fn) -> dict` with overall/by_type/by_difficulty breakdown.
-**Depends on:** Task 1 (uses llm_fn signature)
-**Acceptance:** Tests verify judge parsing (CORRECT→1, INCORRECT→0, robustness) and aggregation math.
+### Task 2: SLAKE data loader
+**File:** `src/data/loaders.py` (modify)
+**What:** Add `load_slake()` returning `List[QAItem]`, filtered by modality and language. Add to LOADERS dict.
+**Depends on:** nothing
+**Acceptance:** Test verifies X-Ray filtering and QAItem shape.
 
-### Task 3: CLI eval runner
-**File:** `scripts/eval_vindr_vqa.py`
-**What:** CLI entry point following `eval_multihop.py` pattern. Loads data, inits KRONOS pipeline, runs predictions, calls Gemini judge, writes JSON report + prints table.
-**Depends on:** Task 1, Task 2
-**Acceptance:** Smoke test with mocked pipeline + mocked Gemini writes valid JSON report.
+### Task 3: Register slake_kg tool
+**Files:** `src/contracts.py` (add to ToolName), `src/tools/dispatch.py` (route slake_kg)
+**What:** Add "slake_kg" to ToolName literal. Route it in dispatch to SlakeKG.lookup().
+**Depends on:** Task 1
+**Acceptance:** Test verifies dispatch routes slake_kg action correctly.
 
-### Task 4: Tests
-**File:** `tests/test_eval_vindr_vqa.py`
-**What:** All unit tests: judge_answer correct/incorrect/robustness, grade_batch aggregation, CLI smoke test. All `not gpu` marked.
-**Depends on:** Task 1, Task 2, Task 3 (tests written alongside each task, collected here)
-**Acceptance:** `pytest tests/test_eval_vindr_vqa.py -m "not gpu"` passes.
+### Task 4: Eval grading + CLI runner
+**Files:** `scripts/eval_slake.py`
+**What:** CLI runner with exact-match grading, breakdown by content_type and answer_type, reasoning trace in report.
+**Depends on:** Task 1, 2, 3
+**Acceptance:** CLI smoke test with mocked pipeline writes valid JSON report.
+
+### Task 5: Final test suite verification
+**What:** Run full `pytest tests/ -m "not gpu"` to verify no regressions.
+**Depends on:** Task 1-4
+**Acceptance:** All tests pass.
