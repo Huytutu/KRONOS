@@ -123,11 +123,16 @@ def test_cli_smoke(tmp_path):
     img_dir = tmp_path / "images"
     img_dir.mkdir()
 
-    mock_result = MagicMock()
-    mock_result.answer = "Yes, Cardiomegaly is present"
+    def _mock_sr(answer):
+        sr = MagicMock()
+        sr.answer = answer
+        sr.tier = "A"
+        sr.conf = 0.9
+        sr.path = []
+        return sr
 
     with patch("scripts.eval_vindr_vqa.init_pipeline") as mock_init, \
-         patch("scripts.eval_vindr_vqa.run_predictions", return_value=["Yes", "Center"]), \
+         patch("scripts.eval_vindr_vqa.run_predictions", return_value=[_mock_sr("Yes"), _mock_sr("Center")]), \
          patch("scripts.eval_vindr_vqa.gemini_complete", side_effect=lambda p: "CORRECT"):
         mock_init.return_value = (MagicMock(), MagicMock(), MagicMock())
 

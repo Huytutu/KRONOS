@@ -40,25 +40,38 @@ def init_pipeline(weights, model_path, quantize):
     return dag, detector, agent
 
 
+def _serialize_trace(search_result):
+    """Convert SearchResult.path into a JSON-friendly list of steps."""
+    steps = []
+    for action, obs in search_result.path:
+        steps.append({
+            "tool": action.tool,
+            "args": action.args,
+            "result": obs.result if isinstance(obs.result, (str, int, float, bool, list, dict, type(None))) else str(obs.result),
+            "ok": obs.ok,
+        })
+    return steps
+
+
 def run_predictions(items, dag, detector, agent):
     from src.pipeline import run
-    predictions = []
+    results = []
     for i, item in enumerate(items):
         image_path = ROOT / item.image
         if not image_path.exists():
             print(f"  SKIP {item.id}: image not found ({image_path})")
-            predictions.append("")
+            results.append(None)
             continue
         try:
             result = run(str(image_path), item.question, dag, detector, agent)
-            predictions.append(result.answer)
+            results.append(result)
             print(result.answer)
         except Exception as e:
             print(f"  ERROR {item.id}: {e}")
-            predictions.append("")
+            results.append(None)
         if (i + 1) % 10 == 0:
             print(f"  {i + 1}/{len(items)} done")
-    return predictions
+    return results
 
 
 def print_report(report):
@@ -96,10 +109,22 @@ def main():
     dag, detector, agent = init_pipeline(args.weights, args.model, args.quantize)
 
     print("Running predictions...")
-    predictions = run_predictions(items, dag, detector, agent)
+    search_results = run_predictions(items, dag, detector, agent)
+    predictions = [r.answer if r else "" for r in search_results]
 
     print("Grading with Gemini judge...")
     report = grade_batch(items, predictions, gemini_complete)
+
+    # Enrich details with reasoning trace
+    for detail, sr in zip(report["details"], search_results):
+        if sr:
+            detail["tier"] = sr.tier
+            detail["conf"] = sr.conf
+            detail["trace"] = _serialize_trace(sr)
+        else:
+            detail["tier"] = "ABSTAIN"
+            detail["conf"] = 0.0
+            detail["trace"] = []
 
     out = Path(args.out) if args.out else ROOT / "results" / "vindr_vqa_report.json"
     out.parent.mkdir(parents=True, exist_ok=True)
