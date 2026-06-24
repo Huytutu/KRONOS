@@ -66,3 +66,34 @@ def test_slake_kg_organs(mini_kg):
     organs = mini_kg.organs()
     assert "lung" in organs
     assert "heart" in organs
+
+
+# ── Task 2: load_slake tests ──
+
+from src.data.loaders import load_slake, QAItem
+
+
+def test_load_slake_filters_xray(tmp_path):
+    data = [
+        {"img_id": 1, "img_name": "xmlab1/source.jpg", "question": "Q1",
+         "answer": "Heart", "q_lang": "en", "location": "Chest",
+         "modality": "X-Ray", "answer_type": "OPEN", "base_type": "vqa",
+         "content_type": "Organ", "triple": ["vhead", "_", "_"], "qid": 0},
+        {"img_id": 2, "img_name": "xmlab2/source.jpg", "question": "Q2",
+         "answer": "Liver", "q_lang": "en", "location": "Abdomen",
+         "modality": "CT", "answer_type": "OPEN", "base_type": "vqa",
+         "content_type": "Organ", "triple": ["vhead", "_", "_"], "qid": 1},
+        {"img_id": 3, "img_name": "xmlab3/source.jpg", "question": "Q3",
+         "answer": "Yes", "q_lang": "zh", "location": "Chest",
+         "modality": "X-Ray", "answer_type": "CLOSED", "base_type": "vqa",
+         "content_type": "KG", "triple": ["vhead", "cause", "ktail"], "qid": 2},
+    ]
+    path = tmp_path / "test.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    items = load_slake(str(path), image_dir="data/Slake1.0/imgs")
+    assert len(items) == 1
+    assert items[0].question == "Q1"
+    assert items[0].dataset == "slake"
+    assert items[0].meta["content_type"] == "Organ"
+    assert items[0].meta["modality"] == "X-Ray"

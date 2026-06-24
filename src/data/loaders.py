@@ -65,6 +65,27 @@ def load_vindr_vqa(path, image_dir="data/vindr_cxr_vqa/train"):
     return items
 
 
+def load_slake(path, image_dir="data/Slake1.0/imgs", modality="X-Ray", lang="en"):
+    """SLAKE 1.0: one QAItem per question, filtered by modality and language."""
+    meta_keys = ("content_type", "answer_type", "triple", "location", "modality", "img_id")
+    with open(path, encoding="utf-8") as f:
+        records = json.load(f)
+    items = []
+    for r in records:
+        if r.get("modality") != modality:
+            continue
+        if r.get("q_lang") != lang:
+            continue
+        image = f"{image_dir}/{r['img_name']}"
+        items.append(QAItem(
+            id=f"{r['img_name'].split('/')[0]}_{r['qid']}",
+            dataset="slake", image=image,
+            question=r["question"], answer=str(r["answer"]),
+            meta=_pick(r, meta_keys),
+        ))
+    return items
+
+
 def load_chestagentbench(path, figures_root="data/chestagentbench"):
     """ChestAgentBench (data/chestagentbench/metadata.jsonl): multiple-choice
     clinical questions over one or more figures."""
@@ -86,5 +107,6 @@ def load_chestagentbench(path, figures_root="data/chestagentbench"):
 LOADERS = {
     "multihop": load_multihop,
     "vindr_vqa": load_vindr_vqa,
+    "slake": load_slake,
     "chestagentbench": load_chestagentbench,
 }
