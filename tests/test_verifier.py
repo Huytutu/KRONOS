@@ -127,6 +127,25 @@ def test_progress_disjoint_penalty(dag):
 
 # --- verify ---
 
+def test_verify_existential_witness_must_be_a_detected_fact(dag):
+    """Reproduce the witness bug. An is_a on a concept that was NOT detected
+    (a DAG tautology: cardiomegaly is-a cardiac_abnormality is always true) must
+    not count as evidence. Detected facts are Nodule/Mass + Consolidation, so the
+    answer is closed-world 'No', not 'Yes'."""
+    from src.engine.verifier import verify
+    node = TreeNode(
+        state_facts=[_fact("Nodule/Mass"), _fact("Consolidation")],
+        history=[
+            (_action("is_a", node="cardiomegaly", target="cardiac_abnormality"),
+             _obs(["cardiomegaly", "cardiac_abnormality"])),
+        ],
+    )
+    query = _query("existential", target="Cardiomegaly")
+    result = verify(node, query, dag)
+    assert result.tier == "A"
+    assert result.answer == "No"
+
+
 def test_verify_existential_tier_a(dag):
     from src.engine.verifier import verify
     node = TreeNode(

@@ -76,7 +76,7 @@ def explain(node, query, dag):
 # --- existential ---
 
 def _progress_existential(node, query, dag):
-    if _has_witness(node) or _has_direct_match(node, query, dag):
+    if _has_witness(node, dag) or _has_direct_match(node, query, dag):
         return 1.0
     target_slug = dag.get_node_by_name(query.target) if query.target else None
     if target_slug and dag.get_node(target_slug):
@@ -86,7 +86,7 @@ def _progress_existential(node, query, dag):
 
 def _verify_existential(node, query, dag):
     path = list(node.history)
-    if _has_witness(node) or _has_direct_match(node, query, dag):
+    if _has_witness(node, dag) or _has_direct_match(node, query, dag):
         return SearchResult(
             answer=node.answer or "Yes", tier="A", path=path, conf=_min_conf(node),
         )
@@ -178,10 +178,17 @@ def _verify_counting(node, query, dag):
 
 # --- helpers ---
 
-def _has_witness(node):
-    """True if any is_a action in history found a path (existential witness)."""
+def _has_witness(node, dag):
+    """True if a detected fact is-a the target via an is_a action.
+
+    The is_a source must resolve to a detected fact — otherwise an ontology
+    tautology like is_a(cardiomegaly, cardiac_abnormality), which is always true
+    regardless of the image, would falsely witness a finding that was never seen.
+    """
+    fact_slugs = {dag.resolve_slug(f.concept) for f in node.state_facts}
     return any(
         action.tool == "is_a" and obs.ok and obs.result
+        and dag.resolve_slug(action.args.get("node", "")) in fact_slugs
         for action, obs in node.history
     )
 
