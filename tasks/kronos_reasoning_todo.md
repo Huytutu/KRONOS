@@ -10,26 +10,13 @@ Run in `medcxr`. Phase 1 fully green before Phase 2.
 - [x] Keep `predict_kronos(item, dag, gen, image=None, …)` signature; new knobs keyword-only
 
 ## Phase 1 — Fix the ToT tree
-- [ ] **T1.1** `_has_witness(node, dag)` binds is_a source to detected facts (verifier.py); pass `dag` at both call sites
-  - [ ] Reproduce test: facts [Nodule/Mass, Consolidation] + is_a(cardiomegaly,…) → verify "No"/A
-  - [ ] `pytest tests/test_verifier.py` green
-- [ ] **T1.2** `_derive_answer` existential binds to detected facts (tree_search.py)
-  - [ ] Stub-agent search test → "No"/A, not "Yes"
-  - [ ] `pytest tests/test_tree_search.py` green
-- [ ] **T1.3** `closure_progress` gradient (existential fraction-checked; negation real count)
-  - [ ] Branching test: frontier ≥2 nodes with distinct rewards
-  - [ ] existing `test_progress_*` still pass
-- [ ] **CHECKPOINT 1**: `pytest tests/test_verifier.py tests/test_tree_search.py` all green → commit
+- [x] **T1.1** `_has_witness(node, dag)` binds is_a source to detected facts (verifier.py) — commit 20b86eb
+- [x] **T1.2** `_derive_answer` existential binds to detected facts (tree_search.py) — commit 5e43380
+- [x] **T1.3** `closure_progress` gradient (existential fraction-checked; negation real count) — commit e48ab6f
+- [x] **CHECKPOINT 1**: full non-GPU suite green (357 passed)
 
 ## Phase 2 — ToG-ify predict_kronos
-- [ ] **T2.1** `_trace_supports` validates connected multi-hop chain (multihop_metrics.py)
-  - [ ] tests: 3-hop valid True, broken-edge False, 2-edge oracle still True
-  - [ ] `predict_mock` grading still `grounding_rate==1.0`
-- [ ] **T2.2** rewrite `predict_kronos` body as KG beam search (predictors.py)
-  - [ ] `llm_prune` stubbable contract; verifier-only termination; cause=pivot disorder; trace=full chain
-  - [ ] rewrite 5 old predict_kronos tests to ToG contract (incl. "LLM says enough" + "no fabricated edge")
-  - [ ] ablations: max_depth=1, prune=False
-  - [ ] baselines (zero_shot/cot/react/mock) outputs unchanged
-- [ ] **T2.3** signature/runner compatibility
-  - [ ] `test_eval_multihop_cli.py` + `test_run_multihop_cli.py` green
-- [ ] **CHECKPOINT 2**: `pytest tests/` full suite green → commit
+- [x] **T2.1** `_trace_supports` validates connected multi-hop chain (multihop_metrics.py) — commit abdf78c
+- [x] **T2.2** rewrite `predict_kronos` as KG beam search; verifier-only termination; cause=pivot; trace=full chain; ablations max_depth=1 / prune=False; baselines unchanged — commit 86af222
+- [x] **T2.3** runner remap (single_hop→max_depth=1, no_reflection→no_prune); signature kept; CLI green — commit 86af222
+- [x] **CHECKPOINT 2**: full non-GPU suite green (364 passed)
