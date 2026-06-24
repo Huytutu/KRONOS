@@ -105,13 +105,15 @@ def _derive_answer(node, query):
     qtype = query.type
 
     if qtype == "existential":
+        # An is_a only witnesses the target when its source is a detected fact —
+        # otherwise a DAG tautology would falsely answer "Yes".
+        fact_slugs = {slugify(f.concept) for f in node.state_facts}
         for action, obs in node.history:
-            if action.tool == "is_a" and obs.ok and obs.result:
+            if (action.tool == "is_a" and obs.ok and obs.result
+                    and slugify(action.args.get("node", "")) in fact_slugs):
                 return "Yes"
         # Direct match: fact concept matches target (identity, no is-a hop needed)
-        target_slug = slugify(query.target)
-        fact_slugs = {slugify(f.concept) for f in node.state_facts}
-        if target_slug in fact_slugs:
+        if slugify(query.target) in fact_slugs:
             return "Yes"
         return "No"
 
