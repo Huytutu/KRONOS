@@ -150,7 +150,7 @@ def main():
     ap.add_argument("--model", default=str(DEFAULT_MODEL), help="MedGemma path")
     ap.add_argument("--out", default=None, help="output report path")
     ap.add_argument("--quantize", action="store_true", help="4-bit quantization")
-    ap.add_argument("--detector", choices=["yolo", "oracle"], default="yolo",
+    ap.add_argument("--detector", choices=["yolo", "oracle"], default="oracle",
                     help="yolo = YOLO model, oracle = ground-truth detection.json")
     args = ap.parse_args()
 
