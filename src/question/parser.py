@@ -8,7 +8,7 @@ NEGATION_CUES = re.compile(
     re.IGNORECASE,
 )
 
-VALID_QTYPES = {"existential", "negation", "relational", "counting", "open"}
+VALID_QTYPES = {"existential", "negation", "relational", "counting", "open", "shared_cause"}
 
 LLM_PARSE_PROMPT = """Classify this chest X-ray question.
 Return exactly one JSON object: {{"type": "<type>", "target": "<finding or null>"}}

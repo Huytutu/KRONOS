@@ -115,35 +115,83 @@ def test_zero_shot_no_trace(dag):
     assert p == {"answer": "Yes", "cause": "sarcoidosis", "trace": []}
 
 
-def test_kronos_accepts_valid_model_cause(dag):
-    from src.eval.predictors import predict_kronos
-    p = predict_kronos(_yes_item(), dag, _FakeGen("Yes, sarcoidosis"))
-    assert p["answer"] == "Yes" and p["cause"] == "sarcoidosis"
-    assert all(dag.causal_edge(s, t) for s, t in p["trace"])
+def _no_direct_item():
+    """No direct shared cause (forces the search past the first hop), but
+    finding_a has causes so the beam can expand."""
+    return {"id": "nd", "finding_a": "Cardiomegaly", "finding_b": "Pleural effusion",
+            "answer": "No", "gold_causes": [], "support_edges": [], "single_cause": False}
 
 
-def test_kronos_falls_back_to_graph_when_model_wrong(dag):
+def test_kronos_finds_shared_cause(dag):
+    """ToG accepts a Yes only via a KG-verified shared cause; the trace is a real
+    chain (the model's text cannot conjure the answer)."""
     from src.eval.predictors import predict_kronos
-    gen = _FakeGen("Yes, madeupitis", "Yes, madeupitis")
-    p = predict_kronos(_yes_item(), dag, gen)
+    p = predict_kronos(_yes_item(), dag, _FakeGen("anything"))
     assert p["answer"] == "Yes"
     assert p["cause"] in dag.common_causes("Pleural thickening", "Pneumothorax")
-    assert all(dag.causal_edge(s, t) for s, t in p["trace"])
+    assert p["trace"] and all(dag.causal_edge(s, t) for s, t in p["trace"])
 
 
-def test_kronos_single_hop_only_says_no_without_valid_proposal(dag):
+def test_kronos_no_when_no_shared_cause(dag):
     from src.eval.predictors import predict_kronos
-    gen = _FakeGen("Yes, madeupitis", "Yes, madeupitis")
-    p = predict_kronos(_yes_item(), dag, gen, multi_hop=False)
+    p = predict_kronos(_no_item(), dag, _FakeGen("Yes, madeupitis"))
+    assert p["answer"] == "No" and p["cause"] is None and p["trace"] == []
+
+
+def test_kronos_verifier_decides_termination(dag):
+    """The LLM cannot force a Yes: a stub that always 'confirms' still yields No
+    when the KG has no connecting path."""
+    from src.eval.predictors import predict_kronos
+    p = predict_kronos(_no_item(), dag, _FakeGen("Enough — yes, sarcoidosis"))
     assert p["answer"] == "No"
 
 
-def test_kronos_no_reflection_single_model_call(dag):
+def test_kronos_no_fabricated_edge(dag):
+    """A cause the model invents never enters the trace; every edge stays real."""
     from src.eval.predictors import predict_kronos
-    gen = _FakeGen("Yes, madeupitis", "Yes, sarcoidosis")
-    p = predict_kronos(_yes_item(), dag, gen, reflection=False)
-    assert gen.calls == 1            # no second (reflective) attempt
-    assert p["answer"] == "Yes"      # graph fallback still finds a real cause
+    p = predict_kronos(_yes_item(), dag, _FakeGen("Yes, madeupitis"))
+    assert p["answer"] == "Yes"
+    nodes = {n for edge in p["trace"] for n in edge}
+    assert "madeupitis" not in nodes
+    assert all(dag.causal_edge(s, t) for s, t in p["trace"])
+
+
+def test_kronos_max_depth_1_finds_direct_cause(dag):
+    """Single-hop ablation (max_depth=1) still verifies a direct shared cause."""
+    from src.eval.predictors import predict_kronos
+    item = {"id": "y3", "finding_a": "Cardiomegaly", "finding_b": "Pneumothorax",
+            "answer": "Yes", "gold_causes": [], "support_edges": [], "single_cause": True}
+    p = predict_kronos(item, dag, _FakeGen("anything"), max_depth=1)
+    assert p["answer"] == "Yes"
+    assert p["cause"] in dag.common_causes("Cardiomegaly", "Pneumothorax")
+
+
+def test_kronos_max_depth_1_does_not_search_deeper(dag):
+    """max_depth=1 never explores past the first hop (the LLM is never consulted)."""
+    from src.eval.predictors import predict_kronos
+    spy = _FakeGen("...")
+    p = predict_kronos(_no_direct_item(), dag, spy, max_depth=1)
+    assert spy.calls == 0
+    assert p["answer"] == "No"
+
+
+def test_kronos_prune_false_skips_llm(dag):
+    """prune=False explores the beam without consulting the LLM at all."""
+    from src.eval.predictors import predict_kronos
+    spy = _FakeGen("...")
+    predict_kronos(_no_direct_item(), dag, spy, prune=False)
+    assert spy.calls == 0
+
+
+def test_kronos_unified_uses_tree_search(dag):
+    """predict_kronos now runs through the unified tree search engine,
+    not a standalone beam loop."""
+    from src.eval.predictors import predict_kronos
+    item = {"id": "y3", "finding_a": "Cardiomegaly", "finding_b": "Pneumothorax",
+            "answer": "Yes", "gold_causes": [], "support_edges": [], "single_cause": True}
+    p = predict_kronos(item, dag, _FakeGen("anything"))
+    assert p["answer"] == "Yes"
+    assert p["trace"] and all(dag.causal_edge(s, t) for s, t in p["trace"])
 
 
 def test_react_no_gate_can_hallucinate(dag):

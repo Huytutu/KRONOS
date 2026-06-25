@@ -31,14 +31,35 @@ def grade_item(item, pred, dag):
 
 def _trace_supports(trace, item, dag):
     """True if every edge in the claimed trace is a real may_cause edge and the
-    trace links finding_a and finding_b (a verifiable shared-cause chain)."""
+    trace is a connected shared-cause chain: one node (the shared cause) from
+    which both finding_a and finding_b are reachable along the trace edges.
+    Handles multi-hop chains, not just two edges sharing a single cause."""
     if not trace:
         return False
     for edge in trace:
         if len(edge) != 2 or not dag.causal_edge(edge[0], edge[1]):
             return False
-    targets = {str(t).lower() for _, t in trace}
-    return item["finding_a"].lower() in targets and item["finding_b"].lower() in targets
+    a = item["finding_a"].lower()
+    b = item["finding_b"].lower()
+    nodes = {str(n).lower() for edge in trace for n in edge}
+    return any(_reaches(trace, pivot, a) and _reaches(trace, pivot, b)
+              for pivot in nodes)
+
+
+def _reaches(trace, src, dst):
+    """True if dst is reachable from src following directed trace edges."""
+    seen = {src}
+    stack = [src]
+    while stack:
+        node = stack.pop()
+        if node == dst:
+            return True
+        for s, t in trace:
+            s, t = str(s).lower(), str(t).lower()
+            if s == node and t not in seen:
+                seen.add(t)
+                stack.append(t)
+    return False
 
 
 def deletion_holds(item, dag):

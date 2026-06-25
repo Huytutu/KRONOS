@@ -22,6 +22,8 @@ class MockAgent:
             return self._counting(node, query, k)
         if qtype == "open":
             return self._open(node, query, k)
+        if qtype == "shared_cause":
+            return self._shared_cause(node, query, k)
         return []
 
     def _existential(self, node, query, k):
@@ -113,6 +115,20 @@ class MockAgent:
     def _counting(self, node, query, k):
         count = len({f.concept for f in node.state_facts})
         return [str(count)]
+
+    def _shared_cause(self, node, query, k):
+        a = query.constraints.get("finding_a", "")
+        b = query.constraints.get("finding_b", "")
+        explored = set()
+        for action, obs in node.history:
+            if action.tool == "neighbors":
+                explored.add(action.args.get("node", "").lower())
+
+        if a.lower() not in explored:
+            return [Action(tool="neighbors", args={"node": a, "direction": "caused_by"})]
+        if b.lower() not in explored:
+            return [Action(tool="neighbors", args={"node": b, "direction": "caused_by"})]
+        return ["No"]
 
     def _open(self, node, query, k):
         names = [f.concept for f in node.state_facts]

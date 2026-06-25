@@ -1,5 +1,7 @@
 import csv
+import json
 from collections import defaultdict
+from pathlib import Path
 from src.contracts import PerceptualFact
 
 
@@ -78,3 +80,35 @@ class PerceptionOracle:
         if center_x < 0.5:
             return "right"
         return "left"
+
+
+class SlakeOracle:
+    """Ground-truth detector for SLAKE — reads detection.json per image.
+
+    SLAKE detection format: [{"Finding": [x, y, w, h]}, ...]
+    Acts as a drop-in for Detector: call detect(image_path) → List[PerceptualFact].
+    """
+
+    def __init__(self, image_dir="data/Slake1.0/imgs"):
+        self.image_dir = Path(image_dir)
+
+    def detect(self, image_path):
+        img_dir = Path(image_path).parent
+        det_path = img_dir / "detection.json"
+        if not det_path.exists():
+            return []
+        with open(det_path, encoding="utf-8") as f:
+            entries = json.load(f)
+        facts = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            for finding, coords in entry.items():
+                if not finding or not coords or len(coords) != 4:
+                    continue
+                x, y, w, h = coords
+                bbox = (x, y, x + w, y + h)
+                facts.append(PerceptualFact(
+                    concept=finding, bbox=bbox, laterality="midline", conf=1.0,
+                ))
+        return facts

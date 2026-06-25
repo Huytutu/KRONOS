@@ -1,0 +1,155 @@
+"""Tests for VinDr-CXR VQA evaluation pipeline.
+
+All tests are CPU-only (mocked models, mocked APIs).
+"""
+import pytest
+import json
+from unittest.mock import patch, MagicMock
+from pathlib import Path
+
+# ── Task 1: Gemini client tests ──
+
+def test_gemini_complete_returns_text():
+    mock_resp = MagicMock()
+    mock_resp.text = "Hello world"
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_resp
+
+    with patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key"}), \
+         patch("google.genai.Client", return_value=mock_client):
+        from src.llm.gemini_client import complete
+        result = complete("Say hello")
+    assert result == "Hello world"
+
+
+def test_gemini_complete_missing_key_returns_empty():
+    with patch.dict("os.environ", {}, clear=True):
+        import importlib
+        import src.llm.gemini_client as mod
+        importlib.reload(mod)
+        result = mod.complete("test")
+    assert result == ""
+
+
+# ── Task 2: VinDr VQA metrics tests ──
+
+from src.eval.vindr_vqa_metrics import judge_answer, grade_batch
+from src.data.loaders import QAItem
+
+
+def test_judge_answer_correct():
+    llm_fn = lambda prompt: "CORRECT"
+    assert judge_answer("Is there X?", "Yes", "Yes, X is present.", llm_fn) == 1
+
+
+def test_judge_answer_incorrect():
+    llm_fn = lambda prompt: "INCORRECT"
+    assert judge_answer("Is there X?", "No", "Yes, X is present.", llm_fn) == 0
+
+
+def test_judge_answer_parse_robustness():
+    llm_fn = lambda prompt: "CORRECT. The answer matches the ground truth."
+    assert judge_answer("Q?", "A", "A", llm_fn) == 1
+
+
+def test_judge_answer_incorrect_substring():
+    """'INCORRECT' contains 'CORRECT' — must parse as 0."""
+    llm_fn = lambda prompt: "INCORRECT"
+    assert judge_answer("Q?", "A", "B", llm_fn) == 0
+
+
+def _make_items():
+    """6 items: one per question type, mixed difficulty."""
+    types = ["Where", "Is_there", "How_many", "Yes_No", "Which", "What"]
+    diffs = ["Easy", "Medium", "Easy", "Medium", "Easy", "Medium"]
+    items = []
+    for i, (t, d) in enumerate(zip(types, diffs)):
+        items.append(QAItem(
+            id=f"img_{i}", dataset="vindr_vqa", image=f"img_{i}.png",
+            question=f"Q{i}?", answer=f"A{i}",
+            meta={"type": t, "difficulty": d},
+        ))
+    return items
+
+
+def test_grade_batch_aggregation():
+    items = _make_items()
+    predictions = [f"A{i}" for i in range(6)]
+    # call_count[0] tracks calls; first call is the smoke-test probe,
+    # then 6 grading calls: items 0-3 → CORRECT, items 4-5 → INCORRECT.
+    call_count = [0]
+    def mock_llm(prompt):
+        idx = call_count[0]
+        call_count[0] += 1
+        # idx 0 = smoke-test, idx 1-4 = CORRECT, idx 5-6 = INCORRECT
+        return "CORRECT" if idx < 5 else "INCORRECT"
+
+    result = grade_batch(items, predictions, mock_llm)
+
+    assert result["n"] == 6
+    assert abs(result["overall_accuracy"] - 4 / 6) < 1e-9
+    assert result["by_type"]["Where"]["accuracy"] == 1.0
+    assert result["by_type"]["What"]["accuracy"] == 0.0
+    assert result["by_difficulty"]["Easy"]["n"] == 3
+    assert result["by_difficulty"]["Medium"]["n"] == 3
+
+
+# ── Task 3: CLI smoke test ──
+
+def test_cli_smoke(tmp_path):
+    """Mock pipeline + Gemini, run CLI with --limit 2, verify JSON report."""
+    # Write a minimal vqa.json
+    vqa_data = [
+        {
+            "image_id": "fake_001",
+            "num_questions": 2,
+            "vqa": [
+                {"question": "Is there Cardiomegaly?", "answer": "Yes",
+                 "type": "Yes_No", "difficulty": "Easy",
+                 "gt_finding": "Cardiomegaly", "gt_location": "<loc_0_0_1_1>",
+                 "reason": "test"},
+                {"question": "Where is the Cardiomegaly?", "answer": "Center",
+                 "type": "Where", "difficulty": "Medium",
+                 "gt_finding": "Cardiomegaly", "gt_location": "<loc_0_0_1_1>",
+                 "reason": "test"},
+            ],
+        }
+    ]
+    vqa_path = tmp_path / "vqa.json"
+    vqa_path.write_text(json.dumps(vqa_data), encoding="utf-8")
+    out_path = tmp_path / "report.json"
+
+    # Create a fake image so pipeline.run doesn't fail on missing file
+    img_dir = tmp_path / "images"
+    img_dir.mkdir()
+
+    def _mock_sr(answer):
+        sr = MagicMock()
+        sr.answer = answer
+        sr.tier = "A"
+        sr.conf = 0.9
+        sr.path = []
+        return sr
+
+    with patch("scripts.eval_vindr_vqa.init_pipeline") as mock_init, \
+         patch("scripts.eval_vindr_vqa.run_predictions", return_value=[_mock_sr("Yes"), _mock_sr("Center")]), \
+         patch("scripts.eval_vindr_vqa.gemini_complete", side_effect=lambda p: "CORRECT"):
+        mock_init.return_value = (MagicMock(), MagicMock(), MagicMock())
+
+        from scripts.eval_vindr_vqa import main
+        import sys
+        orig_argv = sys.argv
+        sys.argv = ["eval_vindr_vqa.py",
+                     "--vqa", str(vqa_path),
+                     "--image-dir", str(img_dir),
+                     "--limit", "2",
+                     "--out", str(out_path)]
+        try:
+            main()
+        finally:
+            sys.argv = orig_argv
+
+    assert out_path.exists()
+    report = json.loads(out_path.read_text(encoding="utf-8"))
+    assert report["n"] == 2
+    assert report["overall_accuracy"] == 1.0

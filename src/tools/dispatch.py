@@ -6,7 +6,9 @@ from src.retrieval.tool import run_retrieve
 
 
 def run_tool(action, facts, dag, img_wh, image=None, detector_fn=None, vlm_fn=None,
-             retriever=None):
+             retriever=None, slake_kg=None):
+    if action.tool == "slake_kg":
+        return _run_slake_kg(action, slake_kg)
     if action.tool == "retrieve":
         return run_retrieve(action, retriever)
     if action.kind == "visual":
@@ -33,3 +35,14 @@ def _run_visual(action, image, detector_fn, vlm_fn):
         return run_compare(action, image, vlm_fn=vlm_fn)
 
     return Observation(result=None, ok=False)
+
+
+def _run_slake_kg(action, slake_kg):
+    if slake_kg is None:
+        return Observation(result=None, ok=False)
+    entity = action.args.get("entity", "")
+    relation = action.args.get("relation", "")
+    result = slake_kg.lookup(entity, relation)
+    if result is None:
+        return Observation(result=None, ok=False)
+    return Observation(result=result, ok=True)

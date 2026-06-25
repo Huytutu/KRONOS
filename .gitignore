@@ -5,10 +5,8 @@ __pycache__/
 weights/
 .pytest_cache/
 *.log
-data/vindr_cxr_vqa/test/
-data/vindr_cxr_vqa/train/
-data/rag/
 # Large source ontologies — reproduce the KG via scripts/build_kg.py
-data/*.owl
-# Generated eval reports
 results/
+# Third-party repos (vendored, not tracked)
+third_parties/
+data/

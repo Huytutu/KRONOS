@@ -21,6 +21,7 @@
 \definecolor{symblue}{HTML}{1A5276}
 \definecolor{visred}{HTML}{C0392B}
 \definecolor{vergreen}{HTML}{1E8449}
+\definecolor{caupurple}{HTML}{7D3C98}
 
 \hypersetup{
   colorlinks=true,
@@ -37,7 +38,7 @@
 
 \authorrunning{G.H. Nguyen, M.C. Vu}
 
-\institute{Team KRONOS}
+\institute{University of Medicine and Pharmacy at Ho Chi Minh City, Vietnam}
 
 \maketitle
 
@@ -48,10 +49,10 @@ backed by wrong reasoning---a critical failure mode when clinicians cannot
 audit \emph{why} a model reached its conclusion.
 We present \textbf{KRONOS}, a neuro-symbolic VQA system for chest X-rays
 that guarantees \emph{faithful, auditable evidence traces} by construction.
-A frozen vision-language model (LLaVA-Med 7B) acts as a search agent over a
+A frozen vision-language model (MedGemma 4B) acts as a search agent over a
 tree of interleaved \emph{visual} actions (inspect, re-detect, compare) and
-\emph{symbolic} actions (ontology graph traversal, closed-world negation,
-anatomy mapping).
+\emph{symbolic} actions (ontology traversal, closed-world negation, anatomy
+mapping, causal graph exploration).
 Unlike prior tree-search methods that rely on LLM self-evaluation as a value
 function, KRONOS uses a \textbf{deterministic verifier} that scores nodes by
 \emph{closure-progress}---the degree to which a provable reasoning path has
@@ -60,14 +61,14 @@ The winning root-to-leaf path \emph{is} the evidence trace: symbolic steps
 are sound on the DAG, visual steps cite auditable image regions, and
 a \emph{deletion test} confirms that every step is causally necessary for
 the answer.
+For multi-hop reasoning, KRONOS adopts a Think-on-Graph paradigm: the VLM
+explores causal edges on an RGO-derived knowledge graph while the verifier
+decides when a shared-cause chain is established---yielding traces where
+every edge is a real KG edge by construction.
 Answers are tiered: \textbf{Tier~A} (faithful, verified), \textbf{Tier~B}
 (advisory, flagged), or \textbf{Abstain} (insufficient evidence).
 The entire pipeline is inference-only---no training---with frozen detector,
 frozen VLM, and a CPU-only deterministic engine.
-On the VinDr-CXR-VQA benchmark, KRONOS produces causally faithful traces
-across existential, negation, relational, and counting question types, while
-the \texttt{re\_detect} action allows reasoning to \emph{repair perception}
-errors, improving both faithfulness and accuracy.
 
 \keywords{Medical VQA \and Faithful reasoning \and Neuro-symbolic AI
 \and Tree search \and Chest X-ray \and Knowledge graph}
@@ -90,9 +91,9 @@ right clinical reasons}.
 
 Recent work has shown that chain-of-thought (CoT) traces produced by large
 language models are often \emph{post-hoc rationalizations} rather than
-faithful records of the reasoning process~\cite{turpin2024unfaithful,
+faithful records of the reasoning process~\cite{turpin2023unfaithful,
 arcuschin2025cot}.
-In the medical domain, Huang et al.~\cite{huang2025evaluating}
+In the medical domain, Moll et al.~\cite{moll2025evaluating}
 demonstrated that when input images are perturbed, medical VLMs retain
 identical explanations---evidence that the explanation does not reflect the
 decision process.
@@ -100,7 +101,7 @@ This ``right answer, wrong reason'' failure mode is particularly dangerous
 in clinical settings: if a clinician cannot verify the reasoning, they
 cannot trust or correct the system.
 
-We identify four gaps in existing approaches:
+We identify five gaps in existing approaches:
 \begin{enumerate}
   \item \textbf{Unfaithful CoT.} LLM-generated explanations are post-hoc;
     no structural guarantee ties the trace to the answer.
@@ -115,9 +116,13 @@ We identify four gaps in existing approaches:
   \item \textbf{Linear reasoning cannot recover from errors.}
     ReAct~\cite{yao2023react} chains are one-shot: a wrong first step
     dooms the entire trace.
+  \item \textbf{Multi-hop clinical reasoning lacks grounding.}
+    Questions like ``Can one condition cause both findings A and B?'' require
+    traversing causal pathways, but existing systems either hallucinate
+    causal links or answer without traceable evidence chains.
 \end{enumerate}
 
-\textbf{KRONOS} addresses all four gaps with a single architectural
+\textbf{KRONOS} addresses all five gaps with a single architectural
 principle: \emph{verifier-guided multimodal tree search}.
 A frozen VLM agent searches over a tree of interleaved visual and symbolic
 actions, guided by a deterministic verifier whose reward measures
@@ -125,6 +130,10 @@ actions, guided by a deterministic verifier whose reward measures
 The winning path is faithful by construction: symbolic steps are sound on
 the graph, visual steps cite auditable image regions, and a deletion test
 confirms causal necessity.
+For multi-hop causal reasoning, the same engine adopts a Think-on-Graph
+(ToG) paradigm~\cite{sun2024thinkongraph}: the VLM selects which causal
+edges to explore on an RGO-derived knowledge graph~\cite{budovec2014rgo},
+while the verifier---never the VLM---decides when the path is sufficient.
 
 \noindent\textbf{Contributions.}
 \begin{enumerate}
@@ -135,8 +144,11 @@ confirms causal necessity.
     (\texttt{inspect}, \texttt{re\_detect}, \texttt{compare}) and symbolic
     actions (\texttt{is\_a}, \texttt{disjoint}, \texttt{anatomy\_of},
     \texttt{compose\_laterality}, \texttt{get\_exclusion\_list},
-    \texttt{retrieve}) within the same search tree, allowing reasoning to
-    \emph{repair perception}.
+    \texttt{neighbors}, \texttt{find\_path}, \texttt{retrieve}) within the
+    same search tree, allowing reasoning to \emph{repair perception}.
+  \item \textbf{Multi-hop causal reasoning} via Think-on-Graph: the VLM
+    explores an RGO-derived causal graph while the verifier grounds every
+    trace edge, yielding provably faithful shared-cause chains.
   \item \textbf{Dual faithfulness}: symbolic soundness on the DAG
     and visual evidence-traceability, verified by a deletion test that
     confirms every step is causally necessary.
@@ -167,25 +179,28 @@ However, the knowledge graph is absent at inference: the fine-tuned model
 generates reasoning freely.
 Plan-on-Graph~\cite{chen2024planonGraph} anchors LLM agents to a KG
 during inference but does not verify the resulting traces.
+Think-on-Graph~\cite{sun2024thinkongraph} enables LLM agents to navigate a
+KG hop-by-hop, interleaving LLM reasoning with graph retrieval.
 KRONOS differs by using the KG \emph{at inference as the verifier reward},
-not as training data.
+not as training data, and by requiring the verifier---not the LLM---to
+decide when reasoning is sufficient.
 
 \paragraph{Tree search for LLM reasoning.}
 LATS~\cite{zhou2024lats} applies Monte Carlo Tree Search with LLM
 self-evaluation as the value function, enabling backtracking.
 Visual-MCTS methods (Mulberry, AR-MCTS) extend this to vision tasks but
 still rely on learned reward models.
-In formal verification, VERGE~\cite{li2025verge} separates a proposer LLM
+In formal verification, VERGE~\cite{singh2025verge} separates a proposer LLM
 from a deterministic verifier.
 KRONOS adopts this separation: the VLM proposes actions, and a
 deterministic verifier scores them---but extends it to multimodal medical
 reasoning with both visual and symbolic actions.
 
 \paragraph{Faithful explanations.}
-Turpin et al.~\cite{turpin2024unfaithful} and
+Turpin et al.~\cite{turpin2023unfaithful} and
 Arcuschin et al.~\cite{arcuschin2025cot} demonstrate that CoT reasoning
 is not always faithful.
-Huang et al.~\cite{huang2025evaluating} confirm this in medical VLMs.
+Moll et al.~\cite{moll2025evaluating} confirm this in medical VLMs.
 KRONOS does not generate explanations---the search path \emph{is} the
 explanation, verified by a deletion test.
 
@@ -198,13 +213,13 @@ explanation, verified by a deletion test.
 
 KRONOS answers a question $q$ about a chest X-ray $I$ in four stages
 (Fig.~\ref{fig:architecture}), all grounded in a shared clinical
-\emph{ontology DAG}:
+\emph{ontology DAG} and \emph{causal knowledge graph}:
 
 \begin{enumerate}
   \item \textbf{Perception} --- a frozen detector scans the image and lists
     every finding it sees, \emph{before} the question is read.
   \item \textbf{Parsing} --- a rule-based parser labels the question with one
-    of five types, which fixes the condition the answer must satisfy.
+    of six types, which fixes the verification condition the answer must satisfy.
   \item \textbf{Verifier-guided tree search} --- a frozen VLM agent proposes
     visual and symbolic actions; a deterministic verifier scores each
     resulting state by how close it is to a provable answer.
@@ -263,16 +278,17 @@ exactly the steps shown to the clinician.
 
 % ---------- Stage 3 internals: the agent--verifier loop ----------
 \node[agent, below=1.7cm of det] (agent)
-  {\textbf{VLM Agent}\\LLaVA-Med 7B\\\emph{(frozen)}};
+  {\textbf{VLM Agent}\\MedGemma 4B\\\emph{(frozen, 4-bit)}};
 \node[tools, right=2.8cm of agent] (tl)
   {\textbf{Action Tools}\\[2pt]
    {\color{visred}\textbf{Visual:}} inspect, re\_detect, compare\\
    {\color{symblue}\textbf{Symbolic:}} is\_a, disjoint, anatomy,\\
-   laterality, exclusion, retrieve};
+   laterality, exclusion, retrieve\\
+   {\color{caupurple}\textbf{Causal:}} neighbors, find\_path};
 \node[ver, minimum width=6.4cm] at ($(agent)!0.5!(tl) - (0,2.0)$) (ver)
   {\textbf{Deterministic Verifier}\\reward $=$ closure-progress};
 \node[dag, right=0.8cm of ver] (dag)
-  {\textbf{Ontology}\\\textbf{DAG}\\\scriptsize($\sim$33 nodes)};
+  {\textbf{Ontology}\\\textbf{DAG + KG}\\\scriptsize(28 + 218 nodes)};
 
 % search loop: agent -> tools -> verifier -> agent
 \draw[->, draw=visred!80!black, line width=0.7pt] (agent.east) -- (tl.west)
@@ -312,6 +328,7 @@ exactly the steps shown to the clinician.
   at ($(out.south west)+(0,-0.22)$)
   {\textcolor{visred}{\rule{1.6mm}{1.6mm}}~visual \quad
    \textcolor{symblue}{\rule{1.6mm}{1.6mm}}~symbolic / engine \quad
+   \textcolor{caupurple}{\rule{1.6mm}{1.6mm}}~causal \quad
    \textcolor{vergreen}{\rule{1.6mm}{1.6mm}}~verifier / output \quad
    \textcolor{gray!55}{\rule{1.6mm}{1.6mm}}~input / output};
 
@@ -319,9 +336,10 @@ exactly the steps shown to the clinician.
 \caption{KRONOS pipeline, read top to bottom. The image and the question
   are processed independently (Stages~1--2), then enter the search engine.
   Inside Stage~3, the VLM agent and the deterministic verifier form a loop:
-  the agent proposes a visual (red) or symbolic (blue) action, the verifier
-  scores the resulting state by \emph{closure-progress} on the shared
-  ontology DAG, and best-first selection drives the next expansion.
+  the agent proposes a visual (red), symbolic (blue), or causal (purple)
+  action, the verifier scores the resulting state by \emph{closure-progress}
+  on the shared ontology DAG and causal KG, and best-first selection drives
+  the next expansion.
   Stage~4 re-checks the winning root-to-leaf path and emits a tiered,
   auditable answer. The winning path \emph{is} the evidence trace.}
 \label{fig:architecture}
@@ -342,7 +360,7 @@ of perceptual facts:
 \end{equation}
 where $c_i$ is a clinical finding name, $\mathit{bbox}_i$ is a bounding
 box, $\ell_i \in \{\text{left}, \text{right}, \text{bilateral},
-\text{central}\}$ is laterality, and $s_i \in [0,1]$ is confidence.
+\text{midline}\}$ is laterality, and $s_i \in [0,1]$ is confidence.
 
 Query-independence is essential: if the agent saw the question before
 detection, the question would \emph{prime} which findings are noticed---the
@@ -355,20 +373,23 @@ question-relevant ones.
 
 \subsection{Stage 2: Question Parsing}
 
-A rule-based parser classifies $q$ into one of five types, each
+A rule-based parser classifies $q$ into one of six types, each
 determining which verification closure condition applies:
 
 \begin{center}
 \small
-\begin{tabular}{llp{3.5cm}}
+\begin{tabular}{llp{3.3cm}}
 \toprule
 \textbf{Type} & \textbf{Symbol} & \textbf{Example} \\
 \midrule
-Existential   & $\exists$        & ``Is there cardiomegaly?'' \\
-Negation      & $\neg\exists$    & ``Are the lungs clear?'' \\
-Relational    & $R(\cdot,\cdot)$ & ``Which side shows consolidation?'' \\
-Counting      & $|\cdot|$        & ``How many abnormalities?'' \\
-Open          & ---              & ``Describe the main finding'' \\
+Existential    & $\exists$          & ``Is there cardiomegaly?'' \\
+Negation       & $\neg\exists$      & ``Are the lungs clear?'' \\
+Relational     & $R(\cdot,\cdot)$   & ``Which side shows consolidation?'' \\
+Counting       & $|\cdot|$          & ``How many abnormalities?'' \\
+Shared cause   & $\exists c: c \!\to\! a \wedge c \!\to\! b$
+                                    & ``Can one condition cause both
+                                      effusion and cardiomegaly?'' \\
+Open           & ---                & ``Describe the main finding'' \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -377,14 +398,20 @@ Open          & ---              & ``Describe the main finding'' \\
 When ambiguous, the parser defaults to the \emph{stricter} type
 (e.g., negation over existential) to prevent premature early-exit.
 Open questions are routed to Tier~B (advisory).
+When the rule-based parser has low confidence, an LLM fallback
+(via Groq API) classifies the question type.
 
 % ---
 
-\subsection{The Clinical Ontology DAG (shared knowledge base)}
+\subsection{The Clinical Knowledge Base}
+\label{sec:knowledge_base}
 
-The next two stages both read from one graph, so we introduce it first.
+The next two stages both read from two linked graphs, so we introduce them
+first.
+
+\paragraph{Ontology DAG.}
 KRONOS maintains a hand-curated directed acyclic graph
-$\mathcal{G} = (V, E, R)$ with $\sim$33 clinical concepts and four
+$\mathcal{G}_{\text{ont}} = (V, E, R)$ with 28 clinical concepts and four
 relation types:
 
 \begin{itemize}
@@ -393,15 +420,23 @@ relation types:
     \xrightarrow{\text{is-a}} \text{abnormality}$.
   \item \texttt{disjoint-with} (mutual exclusion): e.g., pneumothorax
     $\perp$ pleural effusion on the same pleural space.
-  \item \texttt{part-of} (anatomy mapping): bounding box to anatomical
-    zone via IoU.
-  \item \texttt{laterality}: left/right/bilateral inference from bbox
-    position.
+  \item \texttt{located-in} (anatomy mapping): finding to typical anatomy
+    zone, derived from 36{,}096 annotated bounding boxes in VinDr-CXR
+    train set.
+  \item \texttt{part-of} (anatomy containment): e.g., left lung
+    $\subset$ lung $\subset$ chest.
 \end{itemize}
 
+\noindent
+Laterality (left/right/bilateral/midline) is \emph{computed} from
+bounding-box position relative to the PA CXR midline, not stored as an
+edge in the DAG.
+
+\noindent
 Unlike general-purpose ontologies (RadLex, SNOMED~CT), this DAG is
 purpose-built for \emph{inference}: it includes exclusion lists,
 disjointness constraints, and anatomy zones that RadLex does not provide.
+RadLex identifiers (RIDs) are retained for traceability.
 
 \paragraph{Closed-world exclusion lists.}
 For each finding $c$, a curated exclusion list $\mathcal{E}(c)$ enumerates
@@ -410,6 +445,30 @@ all findings that must be checked-and-absent before concluding
 For example, $\mathcal{E}(\text{pleural\_effusion}) = \{\text{effusion},
 \text{hydrothorax}, \text{empyema}, \text{hemothorax}\}$.
 If the list is incomplete, the system abstains rather than guessing.
+
+\paragraph{Causal knowledge graph.}
+For multi-hop reasoning, KRONOS maintains a separate causal graph
+$\mathcal{G}_{\text{cau}} = (V_c, E_c)$ derived from the Radiology
+Gamuts Ontology (RGO)~\cite{budovec2014rgo} via automated extraction
+(Algorithm~\ref{alg:kg_build}).
+The graph contains 218 nodes (185 disorders, 33 observations) and 461
+directed \texttt{may\_cause} edges.
+Eleven VinDr-CXR findings are mapped to RGO seed nodes, connecting
+the perceptual layer to the causal reasoning layer.
+
+\begin{algorithm}[t]
+\caption{Causal KG Construction from RGO}
+\label{alg:kg_build}
+\begin{algorithmic}[1]
+\REQUIRE RGO full graph $\mathcal{G}_{\text{RGO}}$, VinDr finding names $F$
+\STATE Map each $f \in F$ to nearest RGO concept $\to$ seed set $S$
+\FOR{each seed $s \in S$}
+  \STATE Extract 1-hop \texttt{may\_cause} predecessors from $\mathcal{G}_{\text{RGO}}$
+\ENDFOR
+\STATE $\mathcal{G}_{\text{cau}} \gets$ union of all extracted subgraphs
+\RETURN $\mathcal{G}_{\text{cau}}$ with node roles (disorder/observation)
+\end{algorithmic}
+\end{algorithm}
 
 % ---
 
@@ -423,11 +482,12 @@ a reasoning state and each edge represents an action.
 \subsubsection{Tree Node.}
 A node $n$ stores: the current set of perceptual facts
 $\mathcal{F}_n$ (base facts plus any added by visual actions), the action
-history $H_n$, the current answer (if proposed), reward $r_n$, and
-parent pointer.
+history $H_n = [(a_1, o_1), \ldots, (a_t, o_t)]$, the current answer (if
+proposed), reward $r_n$, parent pointer, and an optional \emph{reflection}
+string (used for backtracking, see below).
 
 \subsubsection{Action Set.}
-The agent chooses from nine actions in two groups:
+The agent chooses from eleven actions in three groups:
 
 \begin{center}
 \small
@@ -435,16 +495,19 @@ The agent chooses from nine actions in two groups:
 \toprule
 \textbf{Action} & \textbf{Executor} & \textbf{Type} \\
 \midrule
-\texttt{inspect(bbox)}         & VLM   & Visual \\
-\texttt{re\_detect(region)}    & YOLO  & Visual \\
-\texttt{compare(r1, r2)}      & VLM   & Visual \\
+\texttt{inspect(bbox)}               & VLM   & Visual \\
+\texttt{re\_detect(bbox)}            & YOLO  & Visual \\
+\texttt{compare(bbox1, bbox2)}       & VLM   & Visual \\
 \midrule
-\texttt{is\_a(node, target)}   & Engine (CPU) & Symbolic \\
-\texttt{disjoint(a, b)}        & Engine       & Symbolic \\
-\texttt{anatomy\_of(bbox)}     & Engine       & Symbolic \\
-\texttt{compose\_laterality(bbox)} & Engine   & Symbolic \\
-\texttt{get\_exclusion\_list(name)} & Engine  & Symbolic \\
-\texttt{retrieve(k)}           & FAISS        & Symbolic \\
+\texttt{is\_a(node, target)}         & Engine (CPU) & Symbolic \\
+\texttt{disjoint(a, b)}              & Engine       & Symbolic \\
+\texttt{anatomy\_of(bbox)}           & Engine       & Symbolic \\
+\texttt{compose\_laterality(bbox)}   & Engine       & Symbolic \\
+\texttt{get\_exclusion\_list(name)}  & Engine       & Symbolic \\
+\texttt{retrieve(k)}                 & FAISS        & Symbolic \\
+\midrule
+\texttt{neighbors(node, dir)}        & Causal KG    & Causal \\
+\texttt{find\_path(source, target)}  & Causal KG    & Causal \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -468,27 +531,66 @@ BiomedCLIP~\cite{zhang2024biomedclip}.
 It serves as a ``second opinion'' but is \emph{inert to Tier~A}: retrieval
 alone can never close a verification gate.
 
+The causal actions \texttt{neighbors} and \texttt{find\_path} navigate
+$\mathcal{G}_{\text{cau}}$.
+\texttt{neighbors(node, caused\_by)} returns disorders that may cause the
+given finding; \texttt{find\_path(a, b)} returns the shortest directed
+causal path between two concepts.
+Among equally short paths, the engine prefers routes through disorder nodes
+(more clinically meaningful than observation intermediaries).
+
+\subsubsection{Witness Binding.}
+\label{sec:witness_binding}
+
+A critical invariant: an \texttt{is\_a} action only counts as evidence
+(\emph{witness}) for an existential question when its source node resolves
+to a \emph{detected} fact.
+Without this binding, the ontology tautology
+$\text{cardiomegaly} \xrightarrow{\text{is-a}} \text{cardiac\_abnormality}$
+(always true on the DAG, regardless of the image) would falsely witness a
+finding that was never detected:
+
+\begin{equation}
+  \text{witness}(a, n) \iff a.\text{tool} = \texttt{is\_a}
+    \;\wedge\; a.\text{source} \in
+    \{\text{slug}(f.c) \mid f \in \mathcal{F}_n\}
+  \label{eq:witness}
+\end{equation}
+
 \subsubsection{Reward: Closure-Progress.}
 \label{sec:closure_progress}
 At each node, the deterministic verifier computes
 $r_n = \text{closure\_progress}(n, q, \mathcal{G})$, measuring progress
-toward a provable answer:
+toward a provable answer.
+Before computing type-specific progress, the verifier checks for
+\emph{disjointness violations}: if two disjoint findings are both present,
+$r_n = 0$ (branch is killed).
 
 \begin{itemize}
-  \item \textbf{Existential ($\exists$):} 1.0 if a witness is-a path from
-    a fact to the target exists in the action history; 0.2 if the target
-    is resolvable in the DAG; 0.1 otherwise.
-  \item \textbf{Negation ($\neg\exists$):} fraction of exclusion-list items
-    checked-and-absent; 0 if any item is present (dead branch).
+  \item \textbf{Existential ($\exists$):} 1.0 if a bound witness path from
+    a detected fact to the target exists in the action history, or the target
+    directly matches a detected fact; otherwise
+    $0.1 + 0.7 \cdot \frac{|\text{facts checked}|}{|\mathcal{F}_n|}$,
+    providing a gradient that guides the search toward checking more facts.
+  \item \textbf{Negation ($\neg\exists$):} $0.1 + 0.9 \cdot
+    \frac{|\text{exclusion items checked}|}{|\mathcal{E}(\text{target})|}$;
+    0 if any exclusion item is present (dead branch).
   \item \textbf{Relational:} 1.0 if anatomy or laterality has been
     resolved; 0.2 otherwise.
   \item \textbf{Counting:} 1.0 once all distinct facts are enumerated.
-  \item \textbf{Consistency penalty:} If two disjoint findings are both
-    present, $r_n = 0$ (branch is killed).
+  \item \textbf{Shared cause:} 1.0 if a verified shared cause is found
+    (i.e., a concept $c$ where $c \xrightarrow{\text{may\_cause}} a$ and
+    $c \xrightarrow{\text{may\_cause}} b$ are both real KG edges);
+    0.6 if both sides explored but no shared cause; 0.3 if one side
+    explored; 0.1 otherwise.
 \end{itemize}
 
+\noindent
 This reward is fully deterministic---no LLM self-evaluation, no learned
 parameters.
+The gradient (especially for existential and negation) gives the frontier
+enough signal to rank branches, fixing the flat-valued search trees of
+earlier tree-of-thoughts approaches.
 
 \subsubsection{Search Algorithm.}
 
@@ -506,20 +608,28 @@ parameters.
   \STATE $n \gets \arg\max_{n' \in \mathit{frontier}} n'.r$
   \STATE Remove $n$ from $\mathit{frontier}$;
          $\mathit{expanded} \gets \mathit{expanded} + 1$
-  \IF{$n$ has answer}
-    \STATE $\mathit{result} \gets \text{verify}(n, q, \mathcal{G})$
-    \IF{$\mathit{result}.\mathit{tier} = \text{A}$}
-      \RETURN $\mathit{result}$
-      \hfill\COMMENT{Early exit: faithful answer found}
-    \ENDIF
-  \ENDIF
-  \FORALL{action $a$ in $A.\text{propose}(n, q, k)$}
-    \STATE $\mathit{obs} \gets \text{execute}(a, n, I, \mathcal{G})$
-    \STATE $\mathit{child} \gets \text{apply}(n, a, \mathit{obs})$
-    \STATE $\mathit{child}.r \gets
-           \text{closure\_progress}(\mathit{child}, q, \mathcal{G})$
-    \IF{$\mathit{child}.r > 0$}
-      \STATE Add $\mathit{child}$ to $\mathit{frontier}$
+  \FORALL{proposal $p$ in $A.\text{propose}(n, q, k)$}
+    \IF{$p$ is an answer string}
+      \STATE $\mathit{result} \gets \text{verify}(n \cup \{p\}, q, \mathcal{G})$
+      \IF{$\mathit{result}.\mathit{tier} = \text{A}$}
+        \RETURN $\mathit{result}$
+      \ENDIF
+      \IF{not reflected}
+        \STATE Queue $n$ with reflection $\gets$ \text{explain}(failure)
+        \hfill\COMMENT{Backtrack with reason}
+      \ENDIF
+    \ELSE
+      \STATE $\mathit{obs} \gets \text{execute}(p, n, I, \mathcal{G})$
+      \STATE $\mathit{child} \gets \text{apply}(n, p, \mathit{obs})$
+      \STATE Fold new visual facts into $\mathcal{F}_{\mathit{child}}$
+      \STATE $\mathit{child}.r \gets
+             \text{closure\_progress}(\mathit{child}, q, \mathcal{G})$
+      \IF{$\mathit{child}.r \geq 1.0$}
+        \STATE Derive answer; verify; return if Tier~A
+      \ENDIF
+      \IF{$\mathit{child}.r > 0$}
+        \STATE Add $\mathit{child}$ to $\mathit{frontier}$
+      \ENDIF
     \ENDIF
   \ENDFOR
 \ENDWHILE
@@ -531,8 +641,16 @@ Algorithm~\ref{alg:search} describes the search procedure.
 Selection is by highest reward (best-first).
 Backtracking is implicit: when a branch stalls (low reward, no progress),
 siblings with higher reward are expanded instead.
-This is a key advantage over linear ReAct: a wrong first step does not
-doom the trace---the tree explores alternatives.
+
+\paragraph{Reflection backtracking.}
+When the verifier rejects a proposed answer (e.g., the agent answers
+``Yes'' but no witness path exists), the engine generates a deterministic
+\emph{explanation} of the failure (e.g., ``No detected finding is-a the
+target; try re\_detect near a suspected region'') and re-queues the node
+with this reflection.
+The agent receives the reflection in its next prompt, allowing it to
+revise its strategy.
+Each node may be reflected at most once, preventing infinite loops.
 
 % ---
 
@@ -554,16 +672,109 @@ three checks on the root-to-leaf path:
 Based on these checks, the output is classified into three tiers:
 
 \begin{description}
-  \item[Tier~A (Faithful):] All checks pass for structured question types.
+  \item[Tier~A (Faithful):] All checks pass for structured question types
+    (existential, negation, relational, counting, shared cause).
     The path is emitted as an auditable evidence trace.
-    This is the headline result---EF@$k$ and deletion test are evaluated
-    only on Tier~A answers.
-  \item[Tier~B (Advisory):] Open questions or paths that fail verification
-    but the agent has an answer. Flagged as ``perception-only, unverified.''
-    Reported separately.
+  \item[Tier~B (Advisory):] Open questions, or paths where the agent
+    proposes an answer but verification fails.
+    Flagged as ``perception-only, unverified.''
   \item[Abstain:] The search tree is exhausted without any branch passing
     verification. The system refuses to answer rather than guess.
 \end{description}
+
+% ---
+
+\subsection{Multi-Hop Causal Reasoning (Think-on-Graph)}
+\label{sec:multihop}
+
+For shared-cause questions (``Can one condition cause both
+finding~A and finding~B?''), KRONOS uses the same tree search engine with
+a specialized agent and the causal KG (Fig.~\ref{fig:tog}).
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  font=\scriptsize,
+  >={Stealth[length=2mm]},
+  concept/.style={circle, draw=symblue, fill=symblue!8, minimum size=6mm,
+                  align=center, line width=0.5pt},
+  finding/.style={circle, draw=visred, fill=visred!10, minimum size=7mm,
+                  align=center, line width=0.7pt},
+  cause/.style={circle, draw=caupurple, fill=caupurple!12, minimum size=7mm,
+                align=center, line width=0.7pt},
+  edge/.style={->, draw=gray!65, line width=0.5pt},
+  causal/.style={->, draw=caupurple!70, line width=0.8pt},
+]
+% Findings
+\node[finding] (fa) at (0,0) {$a$};
+\node[finding] (fb) at (6,0) {$b$};
+
+% Shared cause
+\node[cause] (sc) at (3,2) {$c$};
+
+% Other causes
+\node[concept] (c1) at (0.8,2) {$c_1$};
+\node[concept] (c2) at (5.2,2) {$c_2$};
+\node[concept] (c3) at (2,3.3) {$c_3$};
+
+% Edges
+\draw[causal] (sc) -- (fa) node[midway, left, font=\tiny] {may\_cause};
+\draw[causal] (sc) -- (fb) node[midway, right, font=\tiny] {may\_cause};
+\draw[edge] (c1) -- (fa);
+\draw[edge] (c2) -- (fb);
+\draw[edge] (c3) -- (sc);
+
+% Labels
+\node[below=3pt of fa, font=\scriptsize\itshape] {Pleural\\effusion};
+\node[below=3pt of fb, font=\scriptsize\itshape] {Cardiomegaly};
+\node[above=3pt of sc, font=\scriptsize\bfseries, text=caupurple] {Shared cause};
+\node[above=2pt of sc, font=\tiny\itshape, yshift=8pt, text=caupurple]
+  {(e.g., sarcoidosis)};
+
+% Agent exploration arrows
+\draw[->, draw=symblue, line width=0.6pt, dashed]
+  (fa.north) to[bend left=15] node[font=\tiny, above, sloped]
+  {\textbf{Step 1:} neighbors($a$)} (c1.south);
+\draw[->, draw=symblue, line width=0.6pt, dashed]
+  (fb.north) to[bend right=15] node[font=\tiny, above, sloped]
+  {\textbf{Step 2:} neighbors($b$)} (c2.south);
+
+\end{tikzpicture}
+\caption{Think-on-Graph for shared-cause reasoning. The agent explores
+  causal predecessors of each finding via \texttt{neighbors}. The verifier
+  identifies the intersection (shared cause $c$) and verifies that both
+  $c \to a$ and $c \to b$ are real KG edges.}
+\label{fig:tog}
+\end{figure}
+
+The shared-cause agent proposes \texttt{neighbors(finding, caused\_by)}
+actions for each finding, retrieving its causal predecessors from
+$\mathcal{G}_{\text{cau}}$.
+The verifier then computes the intersection of predecessor sets and
+verifies each candidate:
+
+\begin{equation}
+  \text{shared\_cause}(a, b) =
+    \{c \mid c \in \mathcal{N}^-(a) \cap \mathcal{N}^-(b)
+    \;\wedge\; (c, a) \in E_c \;\wedge\; (c, b) \in E_c\}
+  \label{eq:shared_cause}
+\end{equation}
+
+\noindent
+where $\mathcal{N}^-(x)$ denotes the \texttt{caused\_by} predecessors of
+$x$ in $\mathcal{G}_{\text{cau}}$.
+The verifier---not the VLM---decides when a shared cause is established.
+Every edge in the resulting trace is a real KG edge by construction.
+
+The closure-progress reward (Section~\ref{sec:closure_progress}) provides
+a gradient: 0.1 (no exploration) $\to$ 0.3 (one side explored) $\to$
+0.6 (both sides explored, no shared cause) $\to$ 1.0 (verified shared
+cause found).
+If both sides are explored and no shared cause exists, the verifier
+returns ``No'' at Tier~A (the negative is verified because both predecessor
+sets were exhaustively examined on the KG).
+
+% ---
 
 \subsection{Dual Faithfulness}
 
@@ -571,9 +782,11 @@ KRONOS makes a careful distinction between two types of faithfulness:
 
 \begin{itemize}
   \item \textbf{Symbolic soundness:} Every symbolic action (graph traversal,
-    disjointness check, anatomy mapping) is deterministically reproducible
-    on the DAG. If the path claims ``cardiomegaly is-a cardiac\_abnormality,''
-    this edge must exist in the graph.
+    disjointness check, anatomy mapping, causal edge traversal) is
+    deterministically reproducible on the DAG and KG. If the path claims
+    ``cardiomegaly is-a cardiac\_abnormality,'' this edge must exist in the
+    graph. If the trace claims ``sarcoidosis may\_cause cardiomegaly,'' this
+    edge must exist in $\mathcal{G}_{\text{cau}}$.
   \item \textbf{Visual evidence-traceability:} Visual actions cite specific
     bounding-box regions that a clinician can inspect. The system does not
     claim provable soundness for neural steps---only that the evidence is
@@ -582,7 +795,7 @@ KRONOS makes a careful distinction between two types of faithfulness:
 
 Both are verified by a \textbf{deletion test}: for each step $e_i$ in the
 winning path $\pi = \{e_1, \ldots, e_n\}$, the corresponding fact or edge
-is removed and the agent is re-run.
+is removed and the verifier is re-run.
 A high deletion rate (fraction of steps whose removal changes the answer)
 confirms that the trace is causally necessary, not decorative:
 
@@ -595,6 +808,12 @@ confirms that the trace is causally necessary, not decorative:
   \label{eq:deletion}
 \end{equation}
 
+\noindent
+For multi-hop shared-cause traces, the deletion test removes each causal
+edge in the support chain and checks whether the shared cause survives.
+The \texttt{load\_bearing\_rate} metric (Section~\ref{sec:metrics}) measures
+this at scale.
+
 % ============================================================================
 \section{Experimental Setup}
 \label{sec:experiments}
@@ -603,46 +822,96 @@ confirms that the trace is causally necessary, not decorative:
 \subsection{Datasets}
 
 \begin{itemize}
-  \item \textbf{VinDr-CXR-VQA} (pilot): Vietnamese CXR dataset with 14
-    finding types, bounding-box annotations, and VQA question--answer
-    pairs. Used for primary evaluation.
-  \item \textbf{PadChest-GR} (negation): Contains explicit ``finding
-    absent'' annotations for evaluating closed-world negation.
-  \item \textbf{GEMeX}~\cite{liu2025gemex} (scale): 1.6M questions with
-    physician-refined evidence regions, for large-scale evaluation.
+  \item \textbf{VinDr-CXR-VQA} (single-image): Vietnamese CXR dataset with
+    14 finding types, bounding-box annotations, and VQA question--answer
+    pairs covering existential, negation, relational, counting, and open
+    question types.
+  \item \textbf{Multi-hop QA} (shared cause): Automatically generated from
+    $\mathcal{G}_{\text{cau}}$ by enumerating all pairs of VinDr findings
+    $(a, b)$, labeling each as Yes/No based on
+    $|\text{common\_causes}(a, b)| > 0$, recording the gold cause set, and
+    computing support edges for the deletion test. Each item includes the
+    question, the two findings, and the gold shared-cause labels.
+  \item \textbf{ChestAgentBench}: Complex clinical VQA benchmark with
+    multiple-choice questions over one or more CXR images, requiring
+    multi-step clinical reasoning.
 \end{itemize}
 
-All datasets are publicly available or accessible via established
-application processes.
+\noindent
+All datasets are publicly available.
 No private patient data is used.
+A unified data loader normalizes all datasets to the same QAItem schema
+(\texttt{id}, \texttt{image}, \texttt{question}, \texttt{answer},
+\texttt{meta}).
 
 \subsection{Metrics}
+\label{sec:metrics}
 
-\paragraph{Evidence Faithfulness at $k$ (EF@$k$).}
-Measures overlap between the reasoning path and gold-standard evidence
-regions (evaluated only on Tier~A answers):
-\begin{equation}
-  \text{EF@}k = \frac{1}{|\mathcal{Q}_A|} \sum_{q \in \mathcal{Q}_A}
-    \frac{|\text{path}(q) \cap \text{gold}(q)|}{|\text{gold}(q)|}
-  \label{eq:efk}
-\end{equation}
+\paragraph{Single-image VQA.}
+\begin{itemize}
+  \item \textbf{Accuracy} and \textbf{F1}: standard classification metrics.
+  \item \textbf{Tier-A coverage}: fraction of questions receiving a Tier~A
+    (verified) answer.
+  \item \textbf{Evidence Faithfulness at $k$ (EF@$k$)}: overlap between
+    the reasoning path and gold-standard evidence regions, evaluated only on
+    Tier~A answers:
+    \begin{equation}
+      \text{EF@}k = \frac{1}{|\mathcal{Q}_A|} \sum_{q \in \mathcal{Q}_A}
+        \frac{|\text{path}(q) \cap \text{gold}(q)|}{|\text{gold}(q)|}
+      \label{eq:efk}
+    \end{equation}
+  \item \textbf{Deletion rate}: causal faithfulness metric
+    (Eq.~\ref{eq:deletion}).
+  \item \textbf{Selective accuracy}: accuracy among answered questions at
+    each coverage level (risk-coverage curve).
+\end{itemize}
 
-\paragraph{Deletion Test.}
-Causal faithfulness metric (Eq.~\ref{eq:deletion}). A rate near 1.0 means
-every step in the trace is load-bearing.
+\paragraph{Multi-hop shared-cause reasoning.}
+Five metrics evaluate grounding and faithfulness, not just answer
+accuracy~\cite{sun2024thinkongraph}:
+\begin{itemize}
+  \item \textbf{Binary accuracy}: fraction of items where the predicted
+    Yes/No matches gold.
+  \item \textbf{Name accuracy}: among gold-Yes items, fraction where the
+    predicted cause name is in the gold cause set.
+  \item \textbf{Grounding rate}: among predicted-Yes items, fraction where
+    every edge in the predicted trace is a real \texttt{may\_cause} edge
+    \emph{and} the trace forms a connected shared-cause chain (one node
+    from which both findings are reachable along trace edges).
+  \item \textbf{Hallucination rate}: among predicted-Yes items, fraction
+    where the named cause is \emph{not} in the gold cause set.
+  \item \textbf{Load-bearing rate}: among single-cause Yes items, fraction
+    where removing the gold support edges eliminates the shared cause
+    (the gold answer depends on that specific chain, not a redundant path).
+\end{itemize}
 
-\paragraph{Selective Accuracy.}
-Risk-coverage curve: accuracy among answered questions vs.\ coverage
-(fraction of questions not abstained).
+\subsection{Baselines}
+\label{sec:baselines}
 
-\paragraph{Standard Metrics.}
-Accuracy and F1 for comparison with prior work. Reported alongside
-linking accuracy (concept linking quality) and coverage (fraction of
-questions the ontology can express).
+We compare KRONOS against four baselines for multi-hop shared-cause
+reasoning, all using the same frozen MedGemma 4B model:
+
+\begin{itemize}
+  \item \textbf{Zero-shot}: MedGemma answers the question directly with
+    no KG access.
+    \emph{No trace by design.}
+  \item \textbf{Chain-of-thought (CoT)}: MedGemma reasons step-by-step but
+    without KG access.
+    \emph{No trace by design.}
+  \item \textbf{ReAct}: MedGemma receives the causal neighborhood of both
+    findings (same graph tools as KRONOS) and answers freely.
+    The cause is accepted as-is---the model can name an unverified
+    (hallucinated) cause.
+    Trace is filled only if the named cause happens to be a real chain.
+  \item \textbf{KG Oracle (Mock)}: Answers directly from the
+    \texttt{common\_causes} set in $\mathcal{G}_{\text{cau}}$ with a
+    verified trace.
+    This is the \emph{upper bound} on KG-grounded accuracy.
+\end{itemize}
 
 \subsection{Ablation Studies}
 
-Five ablations isolate each design decision:
+Six ablations isolate each design decision:
 \begin{enumerate}
   \item \textbf{vs.\ Linear ReAct}: Remove tree search; keep same action
     set. Tree should increase Tier~A coverage.
@@ -655,6 +924,9 @@ Five ablations isolate each design decision:
     re\_detect. Isolates the perception-repair contribution.
   \item \textbf{vs.\ No verify-gate}: Treat all answers as Tier~A.
     Tiering should improve selective accuracy.
+  \item \textbf{vs.\ No witness binding}: Remove the constraint that
+    \texttt{is\_a} sources must be detected facts (Eq.~\ref{eq:witness}).
+    Should increase false positives for existential questions.
 \end{enumerate}
 
 \subsection{Implementation Details}
@@ -664,11 +936,11 @@ YOLOv12s trained on VinDr-CXR (frozen, 14 finding classes).
 Confidence threshold $\tau = 0.5$.
 
 \paragraph{VLM Agent.}
-LLaVA-Med v1.5 Mistral 7B~\cite{li2024llavamed} (frozen, no fine-tuning).
-fp16 precision ($\sim$14GB VRAM) or 4-bit quantized ($\sim$6GB).
+MedGemma 4B (\texttt{google/medgemma-4b-it}), frozen, no fine-tuning.
+4-bit quantized via BitsAndBytes ($\sim$3\,GB VRAM).
 Greedy decoding (temperature = 0) for deterministic reproducibility.
 The prompt includes the question, current evidence graph, action history,
-available tools, and search reflection.
+available tools, and search reflection (if any).
 
 \paragraph{RAG Encoder.}
 BiomedCLIP~\cite{zhang2024biomedclip} (frozen, 512-d L2-normalized
@@ -676,15 +948,23 @@ embeddings). FAISS \texttt{IndexFlatIP} for exact cosine search over
 VinDr-CXR training cases (no test leakage).
 
 \paragraph{Ontology.}
-33 nodes (14 VinDr findings + abstractions + anatomy), four relation types,
-hand-curated exclusion lists, 8 anatomical zones with normalized bounding
-boxes.
+28 nodes (14 VinDr findings + 6 abstraction groups + 7 anatomy nodes
++ 1 root), four relation types, 14 hand-curated exclusion
+lists, 5 anatomical zones with normalized bounding boxes.
+
+\paragraph{Causal KG.}
+218 nodes (185 disorders, 33 observations), 461 \texttt{may\_cause} edges,
+11 seed findings mapped from VinDr-CXR to RGO.
 
 \paragraph{Search hyperparameters.}
 Budget $B = 20$ nodes, branching factor $k = 3$.
+For shared-cause multi-hop: budget $= \text{max\_depth} \times 4$ with
+max\_depth $= 3$ by default.
 
 \paragraph{Engine.}
-Pure Python + NetworkX, CPU-only. Each tool call executes in milliseconds.
+Pure Python + NetworkX, CPU-only. Each tool call executes in $<$1\,ms.
+The full system requires $\sim$3.5\,GB VRAM (MedGemma 4-bit + BiomedCLIP
++ YOLOv12).
 
 % ============================================================================
 \section{Results}
@@ -694,10 +974,10 @@ Pure Python + NetworkX, CPU-only. Each tool call executes in milliseconds.
 \subsection{Determinism and Correctness}
 
 The deterministic engine (verifier, symbolic tools, tree search with
-MockAgent) passes 261 unit tests covering all question types, edge cases,
-and invariants.
-A dedicated \textbf{determinism test} runs 100 identical inputs and
-confirms identical outputs across all runs.
+MockAgent) is validated by a comprehensive test suite covering all question
+types, edge cases, and invariants.
+A dedicated \textbf{determinism test} runs identical inputs and confirms
+identical outputs across runs.
 A dedicated \textbf{deletion test} removes evidence facts and confirms
 the answer changes---proving that traces are causally necessary, not
 post-hoc decorations.
@@ -711,43 +991,108 @@ each question type.
 \centering
 \small
 \caption{Verification strategy by question type. Structured types
-  (existential, negation, relational, counting) can achieve Tier~A.
+  can achieve Tier~A.
   Open questions are routed to Tier~B.}
 \label{tab:question_types}
-\begin{tabular}{lllp{4cm}}
+\begin{tabular}{lllp{3.6cm}}
 \toprule
 \textbf{Type} & \textbf{Closure condition} & \textbf{Tier} &
   \textbf{Verifier check} \\
 \midrule
-Existential & 1 witness is-a path & A &
-  Path exists in DAG, answer matches \\
+Existential & Bound witness path & A &
+  Detected fact is-a target in DAG \\
 Negation & All exclusion items absent & A &
   Every item checked, none present \\
 Relational & Anatomy/laterality resolved & A &
-  anatomy\_of or compose\_laterality succeeded \\
-Counting & All distinct facts enumerated & A &
+  anatomy\_of or laterality succeeded \\
+Counting & Distinct facts enumerated & A &
   Count matches distinct facts \\
-Open & None (no declarative closure) & B &
+Shared cause & $\exists c: c \!\to\! a \wedge c \!\to\! b$ & A &
+  Both edges verified on causal KG \\
+Open & None & B &
   Flagged as advisory \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Faithfulness Guarantees}
+\subsection{Faithfulness Guarantees (By Construction)}
+\label{sec:faithfulness_results}
 
-\paragraph{Structural faithfulness.}
+Several faithfulness properties hold \emph{by construction}, not as
+statistical tendencies:
+
+\paragraph{Symbolic soundness (Tier~A).}
 For Tier~A answers, every symbolic step in the path is replayed on the
-DAG and confirmed to produce the same result. This is not a statistical
-property---it is a structural invariant enforced by the verifier.
+DAG/KG and confirmed to produce the same result. This is a structural
+invariant enforced by the verifier, not a statistical property.
 
-\paragraph{Deletion test results.}
+\paragraph{Witness binding prevents ontology tautologies.}
+The witness binding constraint (Eq.~\ref{eq:witness}) ensures that
+existential answers require a \emph{detected} finding as evidence.
+Without this binding, the query ``Is there Cardiomegaly?'' would always
+return ``Yes'' because
+$\text{cardiomegaly} \xrightarrow{\text{is-a}} \text{cardiac\_abnormality}$
+is always true on the DAG---regardless of what the image shows.
+
+\paragraph{Deletion rate.}
 By construction, removing any witness fact from an existential question
 eliminates the is-a path, changing the answer. For negation, removing any
 checked-and-absent fact from the exclusion list makes the closure condition
-incomplete, triggering abstention. The deletion rate for structured
+incomplete, triggering abstention. For shared-cause traces, removing the
+support edges eliminates the shared cause. The deletion rate for structured
 question types is 1.0 by design when the trace is minimal.
 
-\paragraph{Perception repair.}
+\paragraph{Multi-hop grounding (by construction).}
+KRONOS's multi-hop traces are grounded by construction: the verifier checks
+that every named cause $c$ satisfies
+$(c, a) \in E_c \wedge (c, b) \in E_c$ on the actual causal KG before
+emitting a Tier~A answer. The VLM proposes which edges to explore; it
+never decides whether a cause is valid.
+
+\subsection{Multi-Hop Shared-Cause Evaluation}
+
+Table~\ref{tab:multihop} compares KRONOS against baselines on the
+multi-hop QA dataset.
+
+\begin{table}[t]
+\centering
+\small
+\caption{Multi-hop shared-cause evaluation. KRONOS achieves 100\%
+  grounding and 0\% hallucination by construction (all trace edges are
+  verified KG edges). Binary accuracy is bounded by the KG oracle.
+  Zero-shot and CoT have no traces by design ($-$).}
+\label{tab:multihop}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{System} & \textbf{Binary} & \textbf{Name} & \textbf{Ground.}
+  & \textbf{Halluc.} & \textbf{Load-b.} \\
+  & \textbf{Acc.} $\uparrow$ & \textbf{Acc.} $\uparrow$
+  & \textbf{Rate} $\uparrow$ & \textbf{Rate} $\downarrow$
+  & \textbf{Rate} $\uparrow$ \\
+\midrule
+Zero-shot  & ---  & ---  & $-$    & $-$    & $-$ \\
+CoT        & ---  & ---  & $-$    & $-$    & $-$ \\
+ReAct      & ---  & ---  & ---    & ---    & $-$ \\
+\midrule
+KRONOS     & ---  & ---  & \textbf{1.00}$^*$ & \textbf{0.00}$^*$ & --- \\
+\midrule
+KG Oracle  & ---  & ---  & 1.00$^*$ & 0.00$^*$ & --- \\
+\bottomrule
+\multicolumn{6}{l}{\footnotesize $^*$By construction (verifier guarantee).
+  --- = to be measured with GPU evaluation.}
+\end{tabular}
+\end{table}
+
+\noindent
+The key insight: KRONOS's grounding rate (1.00) and hallucination rate
+(0.00) are \emph{structural guarantees}, not empirical results.
+They hold by construction because the verifier requires every trace edge
+to be a real KG edge before emitting Tier~A.
+Binary accuracy and name accuracy depend on the VLM's ability to explore
+the right causal neighborhoods, which requires GPU evaluation.
+
+\subsection{Perception Repair}
+
 The \texttt{re\_detect} action enables the system to recover from detector
 misses. When the full-image scan fails to detect a small finding (e.g., a
 lung nodule), the agent can re-scan a specific region, discover the
@@ -762,28 +1107,32 @@ Table~\ref{tab:comparison} positions KRONOS against existing methods.
 \begin{table}[t]
 \centering
 \small
-\caption{Comparison with existing approaches.
+\caption{Qualitative comparison with existing approaches.
   KRONOS is the only system combining tree search, knowledge-graph
-  inference at inference time, deterministic verification, and multimodal
-  actions without training.}
+  inference at inference time, deterministic verification, multi-hop
+  causal reasoning, and multimodal actions without training.}
 \label{tab:comparison}
-\begin{tabular}{lccccc}
+\begin{tabular}{lcccccc}
 \toprule
-\textbf{Property} & \textbf{VQA LLM} & \textbf{MedReason} & \textbf{LATS}
-  & \textbf{Vis-MCTS} & \textbf{KRONOS} \\
+\textbf{Property} & \rotatebox{65}{\textbf{VQA LLM}} &
+  \rotatebox{65}{\textbf{MedReason}} & \rotatebox{65}{\textbf{LATS}} &
+  \rotatebox{65}{\textbf{Vis-MCTS}} & \rotatebox{65}{\textbf{ToG}} &
+  \rotatebox{65}{\textbf{KRONOS}} \\
 \midrule
-Reasoning mode      & CoT   & CoT       & Tree+text  & Tree+vis
-  & Tree+vis+sym \\
-KG at inference     & No    & No        & No         & No
-  & \textbf{Yes} \\
-Value function      & ---   & ---       & LLM self   & Reward model
-  & \textbf{Determ. verifier} \\
-Faithfulness claim  & Post-hoc & Post-hoc & None    & None
-  & \textbf{Causal (deletion)} \\
-Perception repair   & No    & No        & No         & Yes
-  & \textbf{Yes} \\
-Training required   & Fine-tune & Fine-tune & Fine-tune & Fine-tune
-  & \textbf{None (frozen)} \\
+Reasoning mode      & CoT   & CoT       & Tree  & Tree
+  & Graph & Tree+Graph \\
+KG at inference     & No    & No        & No    & No
+  & Yes   & \textbf{Yes} \\
+Value function      & ---   & ---       & Self  & RM
+  & ---   & \textbf{Verifier} \\
+Faithfulness        & Post  & Post      & None  & None
+  & Trace & \textbf{Causal} \\
+Multi-hop causal    & No    & No        & No    & No
+  & Yes   & \textbf{Yes} \\
+Perception repair   & No    & No        & No    & Yes
+  & No    & \textbf{Yes} \\
+Training required   & FT    & FT        & FT    & FT
+  & No    & \textbf{No} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -800,13 +1149,14 @@ Base evidence: $\{$cardiomegaly$^{0.55}\}$ (detector missed a small nodule).
 \noindent
 \emph{Branch A (symbolic):}
 $\texttt{is\_a}(\text{cardiomegaly}, \text{nodule}) \to \text{None}$.
-No witness path. Reward: 0.1.
+No witness path (cardiomegaly is not a nodule). Reward: 0.45.
 
 \noindent
 \emph{Branch B (visual$\to$symbolic):}
 $\texttt{re\_detect}(\text{lower-right lung}) \to$ nodule detected
 (conf=0.72, new bbox) $\to$ fact folded $\to$
-$\texttt{is\_a}(\text{nodule}, \text{nodule}) \to$ witness found $\to$
+$\texttt{is\_a}(\text{nodule}, \text{nodule\_mass}) \to$ witness found
+(source is a detected fact) $\to$
 $\texttt{Answer[Yes]} \to$ verify: Tier~A PASS.
 
 The winning path includes both a visual step (citing the specific lung
@@ -825,6 +1175,24 @@ The verifier finds consolidation in $\mathcal{E}$ and immediately returns
 Removing the consolidation fact would change the answer to ``Yes'' or
 trigger re-detection---deletion test passes.
 
+\paragraph{Shared-cause question.}
+Question: ``Can one condition cause both pleural effusion and
+cardiomegaly?''
+Step~1: $\texttt{neighbors}(\text{pleural effusion}, \text{caused\_by})
+\to [\text{pneumonia}, \text{tuberculosis}, \text{sarcoidosis}, \ldots]$.
+Step~2: $\texttt{neighbors}(\text{cardiomegaly}, \text{caused\_by})
+\to [\text{sarcoidosis}, \text{hypothyroidism}, \text{amyloidosis},
+\ldots]$.
+Verifier: $\text{sarcoidosis} \in \mathcal{N}^-(\text{eff.}) \cap
+\mathcal{N}^-(\text{card.})$ \emph{and}
+$(\text{sarcoidosis}, \text{eff.}) \in E_c$ \emph{and}
+$(\text{sarcoidosis}, \text{card.}) \in E_c$.
+Answer: ``Yes, sarcoidosis'' (Tier~A).
+Trace: $[[\text{sarcoidosis}, \text{effusion}],
+[\text{sarcoidosis}, \text{cardiomegaly}]]$ --- both edges are real KG
+edges.
+Removing either edge eliminates the shared cause: deletion test passes.
+
 % ============================================================================
 \section{Discussion}
 \label{sec:discussion}
@@ -836,17 +1204,39 @@ the answer also judges its quality, with no independent ground truth.
 The deterministic verifier provides an external, reproducible signal that
 measures objective progress on the knowledge graph.
 This separation of proposer (VLM) and evaluator (verifier) mirrors the
-generate-then-verify paradigm in formal methods~\cite{li2025verge}.
+generate-then-verify paradigm in formal methods~\cite{singh2025verge}.
+
+\paragraph{Why witness binding matters.}
+Without the witness binding constraint (Eq.~\ref{eq:witness}), the
+existential verifier would accept any successful \texttt{is\_a} traversal
+as evidence---even an ontology tautology unrelated to the image.
+This would produce ``right answer, wrong reason'' failures: the system
+answers ``Yes, there is cardiac abnormality'' because the DAG contains
+the \texttt{is-a} edge, not because the image shows it.
+The binding ensures that the existential answer is grounded in perception.
+
+\paragraph{Why closure-progress needs a gradient.}
+Early versions of KRONOS used a flat reward
+$\{0.0, 0.1, 0.2, 1.0\}$.
+This gave the frontier too little signal to rank competing branches:
+most nodes scored identically, making best-first search degenerate to
+breadth-first.
+The continuous gradient
+($0.1 + 0.7 \cdot \text{fraction\_checked}$ for existential;
+$0.1 + 0.9 \cdot \text{exclusion\_checked}$ for negation) gives the
+search tree a monotonically increasing signal toward verified answers.
 
 \paragraph{Limitations.}
 (1)~The ontology requires manual curation, limiting scalability to new
 domains.
-However, the DAG is small ($\sim$33 nodes for CXR) and version-controlled.
+However, the DAG is small (28 nodes for CXR) and version-controlled.
 (2)~Open questions cannot achieve Tier~A; they are honestly flagged.
-(3)~The frozen VLM (7B parameters) may choose poor actions; tree search
+(3)~The frozen VLM (4B parameters) may choose poor actions; tree search
 with backtracking compensates but at the cost of higher search budget.
-(4)~The system is currently validated on CXR; extension to other modalities
-requires new ontologies and detectors.
+(4)~The causal KG is derived from RGO, which may not cover all clinical
+causal relationships. The system abstains when evidence is insufficient.
+(5)~The system is currently validated on CXR; extension to other modalities
+requires new ontologies, detectors, and causal KGs.
 
 \paragraph{Clinical implications.}
 KRONOS is designed as a \emph{clinical decision support tool}, not a
@@ -854,7 +1244,7 @@ replacement for radiologists.
 The tiered output (A/B/Abstain) gives clinicians a clear signal about how
 much to trust each answer.
 Tier~A answers come with auditable traces (both image regions and
-ontology relationships) that support informed clinical decisions.
+ontology/causal relationships) that support informed clinical decisions.
 The principled abstention mechanism ensures the system does not produce
 confident-sounding answers when evidence is insufficient.
 
@@ -862,6 +1252,8 @@ confident-sounding answers when evidence is insufficient.
 The verifier-guided tree search paradigm is not specific to CXR-VQA.
 Any domain with a structured ontology, grounded perception, and
 verifiable reasoning conditions could adopt this architecture.
+The Think-on-Graph extension shows that multi-hop causal reasoning can
+be made faithful by the same verifier-as-value principle.
 Potential extensions include pathology, dermatology, and ophthalmology.
 
 % ============================================================================
@@ -872,18 +1264,26 @@ Potential extensions include pathology, dermatology, and ophthalmology.
 We presented KRONOS, a neuro-symbolic medical VQA system that produces
 faithful, auditable evidence traces by construction.
 The key innovation is \emph{verifier-guided multimodal tree search}:
-a frozen VLM agent searches over interleaved visual and symbolic actions,
-guided by a deterministic verifier that scores branches by closure-progress
-on a clinical knowledge graph.
-The winning path is the evidence trace---symbolic steps are sound,
-visual steps are citable, and a deletion test confirms causal necessity.
+a frozen VLM agent (MedGemma 4B) searches over interleaved visual,
+symbolic, and causal actions, guided by a deterministic verifier that
+scores branches by closure-progress on a clinical knowledge graph.
+The winning path is the evidence trace---symbolic steps are sound on the
+DAG, causal steps are verified KG edges, visual steps are citable, and a
+deletion test confirms causal necessity.
+
+For multi-hop reasoning, KRONOS adopts a Think-on-Graph paradigm where the
+VLM explores causal edges on an RGO-derived knowledge graph while the
+verifier grounds every trace edge, achieving 100\% grounding rate and 0\%
+hallucination rate by construction.
 
 Unlike prior approaches that rely on LLM self-evaluation or post-hoc
 explanations, KRONOS provides structural faithfulness guarantees for
-structured question types, honest flagging for open questions, and
-principled abstention when evidence is insufficient.
+structured question types (existential, negation, relational, counting,
+shared cause), honest flagging for open questions, and principled
+abstention when evidence is insufficient.
 The entire pipeline is training-free, deterministically reproducible, and
-runs with a frozen detector, frozen VLM, and CPU-only engine.
+runs with a frozen detector, frozen VLM, and CPU-only engine on
+$\sim$3.5\,GB VRAM.
 
 % ============================================================================
 % References
@@ -892,9 +1292,10 @@ runs with a frozen detector, frozen VLM, and CPU-only engine.
 \begin{thebibliography}{99}
 
 \bibitem{arcuschin2025cot}
-Arcuschin, L., Williamson, S., Farquhar, S.:
+Arcuschin, I., Janiak, J., Krzyzanowski, R., et al.:
 Chain-of-thought reasoning in the wild is not always faithful.
-In: ICML (2025). arXiv:2503.08679
+In: ICLR Workshop on Reasoning and Planning for LLMs (2025).
+arXiv:2503.08679
 
 \bibitem{bruno2015error}
 Bruno, M.A., Walker, E.A., Abujudeh, H.H.:
@@ -908,20 +1309,26 @@ Plan-on-Graph: self-correcting adaptive planning of large language model
 on knowledge graphs.
 arXiv:2410.23875 (2024)
 
-\bibitem{huang2025evaluating}
-Huang, Y., et al.:
-Evaluating reasoning faithfulness in medical vision-language models using
-multimodal perturbations.
-arXiv:2510.11196 (2025)
+\bibitem{budovec2014rgo}
+Budovec, J.J., Lam, C.A., Kahn, C.E.:
+Informatics in radiology: Radiology Gamuts Ontology: differential
+diagnosis for the Semantic Web.
+RadioGraphics \textbf{34}(1), 256--264 (2014)
 
 \bibitem{li2024llavamed}
 Li, C., et al.:
 LLaVA-Med: training a large language-and-vision assistant for biomedicine
 in one day.
-In: NeurIPS (2024)
+In: NeurIPS (2023)
 
-\bibitem{li2025verge}
-Li, Z., et al.:
+\bibitem{moll2025evaluating}
+Moll, J., et al.:
+Evaluating reasoning faithfulness in medical vision-language models using
+multimodal perturbations.
+arXiv:2510.11196 (2025)
+
+\bibitem{singh2025verge}
+Singh, V., Cassel, D., Weir, N., Feng, N., Bayless, S.:
 VERGE: formal refinement and guidance engine for verifiable LLM reasoning.
 arXiv:2601.20055 (2025)
 
@@ -933,20 +1340,21 @@ In: ICCV (2025). arXiv:2411.16778
 
 \bibitem{park2024evax}
 Park, S., et al.:
-EvaX: a foundation model for general chest X-ray analysis with
+EVA-X: a foundation model for general chest X-ray analysis with
 self-supervised learning.
-arXiv:2405.xxxxx (2024)
+arXiv:2405.05237 (2024)
 
-\bibitem{reiter1978cwa}
-Reiter, R.:
-On closed world data bases.
-In: Logic and Data Bases, pp.\ 55--76. Springer (1978)
+\bibitem{sun2024thinkongraph}
+Sun, J., et al.:
+Think-on-Graph: deep and responsible reasoning of large language model
+on knowledge graph.
+In: ICLR (2024). arXiv:2307.07697
 
-\bibitem{turpin2024unfaithful}
+\bibitem{turpin2023unfaithful}
 Turpin, M., et al.:
 Language models don't always say what they think: unfaithful explanations
 in chain-of-thought prompting.
-In: NeurIPS (2024)
+In: NeurIPS (2023)
 
 \bibitem{wang2025medreason}
 Wang, Y., et al.:

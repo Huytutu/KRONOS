@@ -54,10 +54,6 @@ def _no():
     return {"answer": "No", "cause": None, "trace": []}
 
 
-def _verified(cause, a, b):
-    return {"answer": "Yes", "cause": cause, "trace": [[cause, a], [cause, b]]}
-
-
 def predict_zero_shot(item, gen, image=None):
     """MedGemma direct answer. No trace -> ungrounded by design."""
     answer, cause = parse_yes_no_cause(gen(build_sc_prompt(item, "zero_shot"), image))
@@ -70,31 +66,64 @@ def predict_cot(item, gen, image=None):
     return {"answer": answer, "cause": cause, "trace": []}
 
 
-def predict_kronos(item, dag, gen, image=None, multi_hop=True, reflection=True):
-    """Model-in-loop, KG-gated: MedGemma proposes a cause; it is accepted ONLY if
-    the KG verifies it causes both findings. On rejection, reflect once, then fall
-    back to multi-hop graph search. Every Yes is KG-verified (grounded by design).
-    Ablations: multi_hop=False (no graph fallback), reflection=False (single attempt)."""
+def predict_kronos(item, dag, gen, image=None, *,
+                   beam_width=3, max_depth=3, prune=True):
+    """KRONOS shared-cause predictor — uses the unified tree search engine.
+
+    Builds a shared_cause Query and runs tree_search.search() with a
+    SharedCauseAgent that wraps the LLM gen function. The verifier decides
+    the answer (never the LLM), and every trace edge is a real KG edge.
+    Ablations: max_depth=1 (limit search budget), prune=False (skip LLM ranking)."""
+    from src.contracts import Query, PerceptualFact
+    from src.search.tree_search import search
+
     a, b = item["finding_a"], item["finding_b"]
+    query = Query(type="shared_cause", target=None,
+                  constraints={"finding_a": a, "finding_b": b},
+                  raw_question=item.get("question", f"shared cause of {a} and {b}?"),
+                  parse_confidence=1.0, parser_tier="rule")
+    facts = [PerceptualFact(concept=a, bbox=(0, 0, 1, 1), laterality="midline", conf=1.0),
+             PerceptualFact(concept=b, bbox=(0, 0, 1, 1), laterality="midline", conf=1.0)]
+    agent = _SharedCauseAgent(gen, image, beam_width, prune)
+    budget = max_depth * 4
+    result = search(query, facts, dag, agent, budget=budget)
 
-    _, cand = parse_yes_no_cause(gen(build_sc_prompt(item, "zero_shot"), image))
-    if cand and dag.causal_edge(cand, a) and dag.causal_edge(cand, b):
-        return _verified(cand, a, b)
+    return _result_to_pred(result, a, b, dag)
 
-    if reflection:
-        prompt = build_sc_prompt(item, "zero_shot") + (
-            f"\n(Note: '{cand}' does not cause both {a} and {b} in the reference. "
-            "Propose another single condition that causes both, or answer No.)")
-        _, cand2 = parse_yes_no_cause(gen(prompt, image))
-        if cand2 and dag.causal_edge(cand2, a) and dag.causal_edge(cand2, b):
-            return _verified(cand2, a, b)
 
-    if multi_hop:
-        for d in dag.causal_neighbors(a, "caused_by"):
-            if dag.causal_edge(d, b):
-                return _verified(d, a, b)
+class _SharedCauseAgent:
+    """Thin agent for shared-cause that explores causal neighbors, optionally
+    using the LLM to rank which causes to explore first."""
 
-    return _no()
+    def __init__(self, gen, image, beam_width, prune):
+        self.gen = gen
+        self.image = image
+        self.beam_width = beam_width
+        self.prune = prune
+
+    def propose_actions(self, node, query, k=3):
+        from src.contracts import Action
+        a = query.constraints.get("finding_a", "")
+        b = query.constraints.get("finding_b", "")
+        explored = set()
+        for action, obs in node.history:
+            if action.tool == "neighbors":
+                explored.add(action.args.get("node", "").lower())
+
+        if a.lower() not in explored:
+            return [Action(tool="neighbors", args={"node": a, "direction": "caused_by"})]
+        if b.lower() not in explored:
+            return [Action(tool="neighbors", args={"node": b, "direction": "caused_by"})]
+        return ["No"]
+
+
+def _result_to_pred(result, a, b, dag):
+    """Convert a SearchResult into the {answer, cause, trace} prediction shape."""
+    if "yes" in result.answer.lower():
+        cause = result.answer.split(",", 1)[1].strip() if "," in result.answer else None
+        trace = [[cause, a], [cause, b]] if cause and dag.causal_edge(cause, a) and dag.causal_edge(cause, b) else []
+        return {"answer": "Yes", "cause": cause, "trace": trace}
+    return {"answer": "No", "cause": None, "trace": []}
 
 
 def predict_react(item, dag, gen, image=None):

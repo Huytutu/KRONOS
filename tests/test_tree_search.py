@@ -1,7 +1,7 @@
 """Tests for tree search — the capstone: best-first + backtrack + verifier-as-value."""
 import pytest
 from pathlib import Path
-from src.contracts import PerceptualFact, Query
+from src.contracts import PerceptualFact, Query, TreeNode, Action, Observation
 from src.agent.mock import MockAgent
 from src.ontology.dag import OntologyDAG
 
@@ -27,6 +27,21 @@ def _query(qtype, target=None, constraints=None):
         type=qtype, target=target, constraints=constraints or {},
         raw_question="test", parse_confidence=1.0, parser_tier="rule",
     )
+
+
+def test_derive_answer_existential_requires_detected_fact(dag):
+    """_derive_answer must not turn an ontology tautology into 'Yes'. The is_a
+    source (cardiomegaly) was never detected, so the answer is closed-world 'No'."""
+    from src.search.tree_search import _derive_answer
+    node = TreeNode(
+        state_facts=[_fact("Nodule/Mass"), _fact("Consolidation")],
+        history=[
+            (Action(tool="is_a", args={"node": "cardiomegaly", "target": "cardiac_abnormality"}),
+             Observation(result=["cardiomegaly", "cardiac_abnormality"], ok=True)),
+        ],
+    )
+    query = _query("existential", target="Cardiomegaly")
+    assert _derive_answer(node, query) == "No"
 
 
 def test_existential_direct_witness(dag, agent):

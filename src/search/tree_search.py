@@ -16,7 +16,8 @@ DEFAULT_IMG_WH = (2304, 2880)
 
 
 def search(query, facts, dag, agent, budget=20, k=3, img_wh=None,
-           image=None, detector_fn=None, vlm_fn=None, retriever=None):
+           image=None, detector_fn=None, vlm_fn=None, retriever=None,
+           slake_kg=None):
     if img_wh is None:
         img_wh = DEFAULT_IMG_WH
 
@@ -56,7 +57,7 @@ def search(query, facts, dag, agent, budget=20, k=3, img_wh=None,
 
             obs = run_tool(proposal, node.state_facts, dag, img_wh,
                           image=image, detector_fn=detector_fn, vlm_fn=vlm_fn,
-                          retriever=retriever)
+                          retriever=retriever, slake_kg=slake_kg)
             new_history = list(node.history) + [(proposal, obs)]
             new_facts = list(node.state_facts)
 
@@ -105,13 +106,15 @@ def _derive_answer(node, query):
     qtype = query.type
 
     if qtype == "existential":
+        # An is_a only witnesses the target when its source is a detected fact —
+        # otherwise a DAG tautology would falsely answer "Yes".
+        fact_slugs = {slugify(f.concept) for f in node.state_facts}
         for action, obs in node.history:
-            if action.tool == "is_a" and obs.ok and obs.result:
+            if (action.tool == "is_a" and obs.ok and obs.result
+                    and slugify(action.args.get("node", "")) in fact_slugs):
                 return "Yes"
         # Direct match: fact concept matches target (identity, no is-a hop needed)
-        target_slug = slugify(query.target)
-        fact_slugs = {slugify(f.concept) for f in node.state_facts}
-        if target_slug in fact_slugs:
+        if slugify(query.target) in fact_slugs:
             return "Yes"
         return "No"
 
@@ -128,4 +131,31 @@ def _derive_answer(node, query):
         count = len({f.concept for f in node.state_facts})
         return str(count)
 
+    if qtype == "shared_cause":
+        return _derive_shared_cause(node, query)
+
     return ""
+
+
+def _derive_shared_cause(node, query):
+    from src.engine.verifier import _find_shared_cause
+    a = query.constraints.get("finding_a", "")
+    b = query.constraints.get("finding_b", "")
+    # Import dag from the verifier's perspective — we need the actual dag
+    # but _derive_answer doesn't receive it. Use the history to find shared causes.
+    # Since _find_shared_cause needs dag, and we don't have it here, we look at
+    # the intersection of neighbors results directly.
+    causes_a = set()
+    causes_b = set()
+    for action, obs in node.history:
+        if action.tool == "neighbors" and obs.ok and obs.result:
+            finding = action.args.get("node", "")
+            causes = {c.lower() for c in obs.result}
+            if finding.lower() == a.lower():
+                causes_a |= causes
+            elif finding.lower() == b.lower():
+                causes_b |= causes
+    overlap = causes_a & causes_b
+    if overlap:
+        return f"Yes, {sorted(overlap)[0]}"
+    return "No"

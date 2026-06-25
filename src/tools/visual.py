@@ -7,11 +7,32 @@ import json
 from src.contracts import Action, Observation, PerceptualFact
 
 
+def _parse_bbox(raw):
+    """Extract (x1, y1, x2, y2) floats from LLM-generated bbox arg.
+    Returns a 4-tuple of floats, or None if unparseable."""
+    if isinstance(raw, (list, tuple)):
+        nums = raw
+    elif isinstance(raw, str):
+        cleaned = raw.strip("()[] ")
+        nums = cleaned.split(",")
+    else:
+        return None
+    try:
+        vals = [float(v) for v in nums[:4]]
+    except (ValueError, TypeError):
+        return None
+    if len(vals) != 4:
+        return None
+    return tuple(vals)
+
+
 def run_inspect(action, image, vlm_fn):
     if image is None:
         return Observation(result=None, ok=False)
 
-    bbox = action.args["bbox"]
+    bbox = _parse_bbox(action.args.get("bbox"))
+    if bbox is None:
+        return Observation(result=None, ok=False)
     crop = _crop(image, bbox)
     prompt = "Describe the abnormality in this chest X-ray region. Return JSON: {\"concept\": \"<finding>\", \"conf\": <0-1>, \"description\": \"<text>\"}"
 
@@ -29,7 +50,9 @@ def run_re_detect(action, image, detector_fn):
     if image is None:
         return Observation(result=None, ok=False)
 
-    bbox = action.args["bbox"]
+    bbox = _parse_bbox(action.args.get("bbox"))
+    if bbox is None:
+        return Observation(result=None, ok=False)
     x1, y1, x2, y2 = bbox
     crop = _crop(image, bbox)
 
@@ -54,8 +77,10 @@ def run_compare(action, image, vlm_fn):
     if image is None:
         return Observation(result=None, ok=False)
 
-    bbox1 = action.args["bbox1"]
-    bbox2 = action.args["bbox2"]
+    bbox1 = _parse_bbox(action.args.get("bbox1"))
+    bbox2 = _parse_bbox(action.args.get("bbox2"))
+    if bbox1 is None or bbox2 is None:
+        return Observation(result=None, ok=False)
     crop1 = _crop(image, bbox1)
     crop2 = _crop(image, bbox2)
     prompt = "Compare these two chest X-ray regions. Return JSON: {\"comparison\": \"<text>\", \"laterality_hint\": \"left|right|bilateral\"}"

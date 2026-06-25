@@ -1,115 +1,145 @@
 # KRONOS
 
-**Knowledge-Routed Neuro-Symbolic Multimodal Reasoning for Faithful Chest X-ray VQA**
+**Knowledge-Routed Neuro-Symbolic Reasoning for Faithful Chest X-ray VQA**
 
-KRONOS answers questions about chest X-rays **and** emits a trace that is the *actual cause*
-of the answer — not a post-hoc rationalization. A small VLM (LLaVA-Med) searches a **tree** of
-visual + symbolic actions, guided by a **deterministic verifier**; the winning root→leaf path
-is an auditable, causally-verifiable evidence trace.
+KRONOS answers chest X-ray questions with an auditable trace grounded in a
+knowledge graph. A frozen VLM (MedGemma-4b) proposes actions; a deterministic
+verifier on a clinical ontology decides the answer. The verifier — never the
+model — is the authority.
 
-> Design v4: *verifier-guided multimodal tree search*. Target venue: MICCAI.
-> Full design: [docs/project.tex](docs/project.tex). Specs: [v4_core_SPEC.md](v4_core_SPEC.md),
-> [v4_neural_SPEC.md](v4_neural_SPEC.md), [ontology_SPEC.md](ontology_SPEC.md).
+One unified tree search engine handles all question types — from single-image
+VQA ("Is there Cardiomegaly?") to multi-hop shared-cause reasoning ("Can one
+condition cause both A and B?"). The verifier on the KG guides search and
+decides the answer; the LLM only proposes which tools to call or edges to
+explore. No model is fine-tuned.
 
 ---
 
 ## How it works
 
 ```
-Chest X-ray ──► EvaX/YOLO detector (frozen)  ──►  findings + bbox + conf   (query-independent)
-Question    ──► concept linking + ontology DAG ──► evidence graph
-                                                        │
-        ┌───────────────────────────────────────────────┘
-        ▼
-  LLaVA-Med agent searches a TREE of actions:
-    • visual : inspect · re_detect · compare      (look back at the image)
-    • symbolic: is_a · disjoint · anatomy_of · compose_laterality
-                · get_exclusion_list · retrieve   (query the graph)
-  guided by the VERIFIER (reward = closure-progress, NOT LLM self-eval)
-        │
-        ▼
-  Verify-gate + tiering:
-    Tier A — path verified on the graph  → faithful trace (EF@k + deletion test)
-    Tier B — open question               → answer flagged "perception-only"
-    Abstain — nothing verifies
+Chest X-ray ─► YOLOv12 detector (frozen) ─► PerceptualFacts (finding, bbox, conf)
+Question    ─► rule-based parser          ─► Query(type, target)
+                                                │
+              ┌─────────────────────────────────┘
+              ▼
+  Unified best-first tree search (all question types)
+  MedGemma proposes tool calls / graph edges to explore
+  Verifier scores each node (closure_progress) + decides tier
+  Tools:
+    symbolic : is_a, disjoint, anatomy_of, compose_laterality,
+               get_exclusion_list, neighbors, find_path
+    visual   : inspect, re_detect, compare
+    retrieval: retrieve (BiomedCLIP + FAISS)
+              │
+              ▼
+  SearchResult(answer, tier={A,B,ABSTAIN}, trace)
+  Tier A = every step verified on KG (existential/negation/shared_cause/...)
+  Tier B = perception-only (open questions)
+  ABSTAIN = insufficient evidence
 ```
-
-Key ideas:
-- **Verifier-as-value:** the tree is guided by a deterministic verifier, so the winning branch
-  is faithful *by construction* (not by an LLM judging itself).
-- **Reasoning repairs perception:** `re_detect` lets the agent zoom back into a region to catch
-  findings the global scan missed — so reasoning lifts accuracy, not just faithfulness.
-- **Frozen, no training:** detector + LLaVA-Med are frozen (prompt-only); engine runs on CPU.
 
 ## Repository structure
 
 ```
 src/
-  contracts.py         # pydantic types: Action, Observation, TreeNode, SearchResult, Tier
-  pipeline.py          # end-to-end run()
+  contracts.py              # Pydantic types: Action, Observation, TreeNode, SearchResult
+  pipeline.py               # End-to-end run() for single-image VQA
+  data/loaders.py           # Dataset loaders (VinDr-VQA, ChestAgentBench, multi-hop)
   agent/
-    base.py            # Agent Protocol
-    mock.py            # MockAgent — scripted, deterministic tests (no GPU)
-    llavamed.py        # LLaVA-Med 1.5 agent (prompt-only, fp16/4-bit)
-  engine/verifier.py   # closure_progress (reward) + verify (gate)
+    medgemma.py             # MedGemma-4b agent (frozen, 4-bit quantized)
+    mock.py                 # MockAgent for deterministic tests (no GPU)
+    prompt.py               # Prompt builder + output parser
+  engine/verifier.py        # closure_progress (search value) + verify (tier gate)
+  search/tree_search.py     # Best-first tree search + reflection backtrack
+  ontology/dag.py           # Ontology DAG (is-a, disjoint, anatomy, laterality, causal)
+  perception/detector.py    # YOLOv12 wrapper → PerceptualFact list
+  question/parser.py        # Rule-based question typing
+  retrieval/                # BiomedCLIP encoder + FAISS RAG index
+  eval/
+    predictors.py           # Multi-hop predictors: mock, zero_shot, cot, react, kronos (ToG)
+    multihop_metrics.py     # Grading: grounding_rate, hallucination, load-bearing
   tools/
-    symbolic.py        # 6 symbolic tools (wrap ontology DAG)
-    visual.py          # 3 visual tools (inspect / re_detect / compare)
-    dispatch.py        # unified router: symbolic vs visual
-  search/tree_search.py# best-first tree search + backtrack
-  ontology/dag.py      # curated ontology DAG (is-a, disjoint, anatomy, laterality)
-  perception/detector.py  # YOLO detector
-  question/parser.py   # question typing
-  linking/linker.py    # finding → ontology node
-data/ontology/         # dag.yaml, exclusion_lists.yaml, anatomy_zones.yaml, synonyms.yaml
-tests/                 # 261 deterministic tests (CPU) + GPU integration tests (skipped)
-scripts/               # reasoning_need_diagnostic.py, build_synonyms.py
+    symbolic.py             # 6 symbolic tools (wrap ontology DAG)
+    visual.py               # 3 visual tools (inspect, re_detect, compare)
+    dispatch.py             # Unified router: symbolic vs visual
+
+scripts/
+  build_kg.py               # Map VinDr findings → RGO, extract causal subgraph
+  build_multihop_qa.py      # Generate multi-hop shared-cause QA items
+  run_multihop.py           # Run a predictor over the QA set → predictions JSONL
+  eval_multihop.py          # Grade predictions → metrics table
+
+data/
+  ontology/                 # dag.yaml, causal_kg.yaml, exclusion_lists.yaml, anatomy_zones.yaml
+  vindr_cxr_vqa/            # VinDr-CXR images + VQA annotations (train.csv, vqa.json)
+  chestagentbench/          # ChestAgentBench metadata + figures
+  multihop_qa/              # Generated shared-cause QA (qa.jsonl)
+  rag/                      # BiomedCLIP FAISS index + case JSONL
+
+tests/                      # 375 deterministic tests (CPU) + 6 GPU integration tests
 ```
 
-## Running
+## Quickstart
 
 ### Tests (CPU, no GPU)
+
 ```bash
-pytest tests/                      # 261 deterministic tests
-python scripts/reasoning_need_diagnostic.py   # dataset reasoning-need analysis
+conda activate medcxr
+pytest tests/ -m "not gpu"     # 375 tests, ~45s
 ```
 
-### Full pipeline (GPU server)
-```bash
-export LLAVAMED_PATH=path/to/llava-med-v1.5-mistral-7b
-export YOLO_WEIGHTS=path/to/yolov12s_vindr.pt
-export TEST_IMAGE=path/to/sample_cxr.png
+### Multi-hop evaluation
 
-pytest tests/test_integration_gpu.py -m gpu -v
+```bash
+# Run the ToG predictor (needs GPU for MedGemma)
+python scripts/run_multihop.py --system kronos --limit 50
+
+# Grade predictions
+python scripts/eval_multihop.py --preds results/preds_kronos.jsonl
+
+# Ablations
+python scripts/run_multihop.py --system single_hop    # max_depth=1
+python scripts/run_multihop.py --system no_prune      # skip LLM pruning
+
+# Baselines (zero_shot, cot, react need GPU; mock is CPU-only)
+python scripts/run_multihop.py --system mock
 ```
+
+### Single-image VQA
 
 ```python
 from src.pipeline import run
 from src.ontology.dag import OntologyDAG
 from src.perception.detector import Detector
-from src.agent.llavamed import LLaVAMedAgent
+from src.agent.medgemma import MedGemmaAgent
 
 dag = OntologyDAG("data/ontology/dag.yaml",
                   "data/ontology/exclusion_lists.yaml",
                   "data/ontology/anatomy_zones.yaml")
-detector = Detector(YOLO_WEIGHTS, dag=dag)
-agent = LLaVAMedAgent(model_path=LLAVAMED_PATH, quantize=True)
+detector = Detector("weights/yolov12s_vindr.pt", dag=dag)
+agent = MedGemmaAgent(quantize=True)
 
-result = run("cxr.png", "Is there Cardiomegaly?", dag, detector, agent)
+result = run("image.png", "Is there Cardiomegaly?", dag, detector, agent)
 print(result.answer, result.tier, result.path)
 ```
 
-## Status
+## Key design decisions
 
-- ✅ Deterministic core: contracts, symbolic tools, verifier, tree search, MockAgent.
-- ✅ Neural layer: LLaVA-Med agent, visual tools, unified dispatch, pipeline.
-- ⏳ Next: run GPU integration on server; EF@k + deletion-test evaluation on VinDr-CXR-VQA.
+- **Verifier-as-value:** the search tree is guided by a deterministic verifier on
+  the KG. The LLM never evaluates itself — fixing the reliability problem of
+  Tree of Thoughts.
+- **Witness binding:** an `is_a` only counts as evidence when its source is a
+  *detected* fact, preventing ontology tautologies from producing false answers.
+- **Think-on-Graph for multi-hop:** the LLM explores the causal KG by pruning
+  edges; the verifier (not the LLM) decides when a path is sufficient.
+  Every trace edge is a real KG edge by construction.
+- **Faithfulness metrics:** grounding rate (every edge is real + chain connects
+  both findings), load-bearing rate (removing the chain flips the answer),
+  hallucination rate (named cause not in the gold set).
 
-## Faithfulness
+## Environment
 
-- **Tier A** (existential, negation, relational, counting): the answer is the deterministic
-  output of the path; symbolic steps are *sound*, visual steps are *evidence-traceable*.
-- **Deletion test:** removing a fact/edge in the path flips the answer → proves the trace is
-  causal, not decorative.
-- Honest scope: KRONOS does **not** claim provably-sound for neural (visual) steps — only
-  evidence-traceable + causal. Open questions are served as **Tier B** and flagged.
+- Python 3.10+, `medcxr` conda env
+- GPU: ~3 GB VRAM (MedGemma 4-bit) + ~0.5 GB (BiomedCLIP + YOLOv12)
+- Spec: [docs/KRONOS_reasoning_SPEC.md](docs/KRONOS_reasoning_SPEC.md)

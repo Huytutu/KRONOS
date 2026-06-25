@@ -21,6 +21,8 @@ def closure_progress(node, query, dag):
         return _progress_relational(node, query, dag)
     if qtype == "counting":
         return 1.0
+    if qtype == "shared_cause":
+        return _progress_shared_cause(node, query, dag)
     return 0.0
 
 
@@ -42,6 +44,8 @@ def verify(node, query, dag):
         return _verify_relational(node, query, dag)
     if qtype == "counting":
         return _verify_counting(node, query, dag)
+    if qtype == "shared_cause":
+        return _verify_shared_cause(node, query, dag)
 
     return SearchResult(answer=node.answer or "", tier="ABSTAIN", path=path, conf=0.0)
 
@@ -76,17 +80,29 @@ def explain(node, query, dag):
 # --- existential ---
 
 def _progress_existential(node, query, dag):
-    if _has_witness(node) or _has_direct_match(node, query, dag):
+    if _has_witness(node, dag) or _has_direct_match(node, query, dag):
         return 1.0
-    target_slug = dag.get_node_by_name(query.target) if query.target else None
-    if target_slug and dag.get_node(target_slug):
-        return 0.2
-    return 0.1
+    # Partial credit for how much of the evidence has been examined, so the
+    # frontier can rank a node that checked more facts above one that checked few.
+    return 0.1 + _fraction_facts_checked(node, dag) * 0.7
+
+
+def _fraction_facts_checked(node, dag):
+    """Fraction of detected facts that have been the source of an is_a action."""
+    if not node.state_facts:
+        return 0.0
+    fact_slugs = {dag.resolve_slug(f.concept) for f in node.state_facts}
+    checked = {
+        dag.resolve_slug(action.args.get("node", ""))
+        for action, obs in node.history
+        if action.tool == "is_a"
+    }
+    return len(fact_slugs & checked) / len(fact_slugs)
 
 
 def _verify_existential(node, query, dag):
     path = list(node.history)
-    if _has_witness(node) or _has_direct_match(node, query, dag):
+    if _has_witness(node, dag) or _has_direct_match(node, query, dag):
         return SearchResult(
             answer=node.answer or "Yes", tier="A", path=path, conf=_min_conf(node),
         )
@@ -112,16 +128,28 @@ def _progress_negation(node, query, dag):
                 return 0.0
         return 0.1
 
+    if not excl_list:
+        return 0.0
+
     fact_slugs = {dag.get_node_by_name(f.concept) for f in node.state_facts}
     for slug in excl_list:
         if slug in fact_slugs:
-            return 0.0
+            return 0.0    # a finding in the exclusion list is present → "No X" is false
 
-    checked = len(excl_list)
-    total = len(excl_list)
-    if total == 0:
-        return 0.0
-    return checked / total
+    # Real gradient: how many exclusion items the agent has actually checked,
+    # reaching 1.0 only when every item has been ruled out.
+    checked = _exclusion_items_checked(node, excl_list)
+    return 0.1 + (checked / len(excl_list)) * 0.9
+
+
+def _exclusion_items_checked(node, excl_list):
+    """How many exclusion items the agent has explicitly checked with an is_a."""
+    checked = {
+        action.args.get("node")
+        for action, obs in node.history
+        if action.tool == "is_a"
+    }
+    return sum(1 for slug in excl_list if slug in checked)
 
 
 def _verify_negation(node, query, dag):
@@ -176,12 +204,80 @@ def _verify_counting(node, query, dag):
     )
 
 
+# --- shared_cause ---
+
+def _progress_shared_cause(node, query, dag):
+    a = query.constraints.get("finding_a", "")
+    b = query.constraints.get("finding_b", "")
+    shared = _find_shared_cause(node, a, b, dag)
+    if shared:
+        return 1.0
+    explored = _explored_sides(node)
+    if explored >= 2:
+        return 0.6
+    if explored >= 1:
+        return 0.3
+    return 0.1
+
+
+def _verify_shared_cause(node, query, dag):
+    path = list(node.history)
+    a = query.constraints.get("finding_a", "")
+    b = query.constraints.get("finding_b", "")
+    shared = _find_shared_cause(node, a, b, dag)
+    if shared:
+        cause = shared[0]
+        trace = [[cause, a], [cause, b]]
+        answer = f"Yes, {cause}"
+        return SearchResult(answer=answer, tier="A", path=path, conf=1.0)
+    if _explored_sides(node) >= 2:
+        return SearchResult(answer=node.answer or "No", tier="A", path=path, conf=0.8)
+    if node.answer:
+        return SearchResult(answer=node.answer, tier="B", path=path, conf=0.3)
+    return SearchResult(answer="", tier="ABSTAIN", path=path, conf=0.0)
+
+
+def _find_shared_cause(node, a, b, dag):
+    """Find causes that appear in neighbors results for BOTH findings."""
+    causes_a = set()
+    causes_b = set()
+    for action, obs in node.history:
+        if action.tool == "neighbors" and obs.ok and obs.result:
+            finding = action.args.get("node", "")
+            causes = {c.lower() for c in obs.result}
+            if finding.lower() == a.lower():
+                causes_a |= causes
+            elif finding.lower() == b.lower():
+                causes_b |= causes
+    overlap = causes_a & causes_b
+    # Verify each candidate is a real shared cause on the KG
+    verified = [c for c in overlap if dag.causal_edge(c, a) and dag.causal_edge(c, b)]
+    return verified
+
+
+def _explored_sides(node):
+    """How many distinct findings have been explored with neighbors.
+    Counts any neighbors call, even if it returned empty (still explored)."""
+    findings = set()
+    for action, obs in node.history:
+        if action.tool == "neighbors":
+            findings.add(action.args.get("node", "").lower())
+    return len(findings)
+
+
 # --- helpers ---
 
-def _has_witness(node):
-    """True if any is_a action in history found a path (existential witness)."""
+def _has_witness(node, dag):
+    """True if a detected fact is-a the target via an is_a action.
+
+    The is_a source must resolve to a detected fact — otherwise an ontology
+    tautology like is_a(cardiomegaly, cardiac_abnormality), which is always true
+    regardless of the image, would falsely witness a finding that was never seen.
+    """
+    fact_slugs = {dag.resolve_slug(f.concept) for f in node.state_facts}
     return any(
         action.tool == "is_a" and obs.ok and obs.result
+        and dag.resolve_slug(action.args.get("node", "")) in fact_slugs
         for action, obs in node.history
     )
 

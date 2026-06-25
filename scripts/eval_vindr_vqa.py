@@ -1,352 +1,138 @@
-"""Evaluate KRONOS on VinDr-CXR-VQA.
+"""Evaluate KRONOS on VinDr-CXR VQA dataset.
 
 Usage:
-    python scripts/eval_vindr_vqa.py --results results.jsonl
-    python scripts/eval_vindr_vqa.py --run --weights weights/yolov12s_vindr.pt
-
-results.jsonl format (one line per question):
-    {"image_id": "...", "question": "...", "type": "Is_there",
-     "gold_answer": "Yes", "pred_answer": "Yes", "tier": "A",
-     "pred_conf": 0.95, "gt_finding": "...", "gt_location": "..."}
+  python scripts/eval_vindr_vqa.py --limit 50
+  python scripts/eval_vindr_vqa.py --limit 0   # full dataset
 """
-import json
-import re
 import argparse
-from collections import defaultdict
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from src.data.loaders import load_vindr_vqa
+from src.eval.vindr_vqa_metrics import grade_batch
+from src.llm.gemini_client import complete as gemini_complete
+
+ONT = ROOT / "data" / "ontology"
+DEFAULT_VQA = ROOT / "data" / "vindr_cxr_vqa" / "vqa.json"
+DEFAULT_IMAGE_DIR = "data/vindr_cxr_vqa/train"
+DEFAULT_WEIGHTS = ROOT / "weights" / "yolov12s_vindr.pt"
+DEFAULT_MODEL = ROOT / "weights" / "medgemma-4b-it"
 
 
-def extract_yes_no(text):
-    """Extract Yes/No from free-text answer."""
-    text = text.strip().lower()
-    if text.startswith("yes"):
-        return "yes"
-    if text.startswith("no"):
-        return "no"
-    return None
-
-
-def extract_count(text):
-    """Extract integer count from free-text answer."""
-    word_to_num = {
-        "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4,
-        "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-    }
-    text = text.strip().lower()
-    for word, num in word_to_num.items():
-        if word in text:
-            return num
-    nums = re.findall(r"\d+", text)
-    if nums:
-        return int(nums[0])
-    return None
-
-
-def extract_laterality(text):
-    """Extract laterality from free-text answer."""
-    text = text.strip().lower()
-    if "bilateral" in text or "both" in text:
-        return "bilateral"
-    if "right" in text:
-        return "right"
-    if "left" in text:
-        return "left"
-    if "central" in text or "midline" in text:
-        return "midline"
-    return None
-
-
-BINARY_TYPES = {"Is_there", "Yes_No"}
-COUNT_TYPES = {"How_many"}
-LATERAL_TYPES = {"Where", "Which"}
-OPEN_TYPES = {"What"}
-
-
-def compare_one(gold_answer, pred_answer, q_type):
-    """Compare gold vs predicted answer. Returns True/False/None (None = can't compare)."""
-    if q_type in BINARY_TYPES:
-        g = extract_yes_no(gold_answer)
-        p = extract_yes_no(pred_answer)
-        if g is None or p is None:
-            return None
-        return g == p
-
-    if q_type in COUNT_TYPES:
-        g = extract_count(gold_answer)
-        p = extract_count(pred_answer)
-        if g is None or p is None:
-            return None
-        return g == p
-
-    if q_type in LATERAL_TYPES:
-        g = extract_laterality(gold_answer)
-        p = extract_laterality(pred_answer)
-        if g is None or p is None:
-            return None
-        return g == p
-
-    return None
-
-
-def compute_binary_metrics(results):
-    """Precision, Recall, F1 for binary (Yes/No) questions only."""
-    tp = fp = fn = tn = 0
-    for r in results:
-        if r["type"] not in BINARY_TYPES:
-            continue
-        if r["tier"] == "ABSTAIN":
-            continue
-
-        gold = extract_yes_no(r["gold_answer"])
-        pred = extract_yes_no(r["pred_answer"])
-        if gold is None or pred is None:
-            continue
-
-        if gold == "yes" and pred == "yes":
-            tp += 1
-        elif gold == "no" and pred == "yes":
-            fp += 1
-        elif gold == "yes" and pred == "no":
-            fn += 1
-        else:
-            tn += 1
-
-    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
-
-    return {
-        "tp": tp, "fp": fp, "fn": fn, "tn": tn,
-        "precision": round(precision, 4),
-        "recall": round(recall, 4),
-        "f1": round(f1, 4),
-    }
-
-
-def compute_metrics(results):
-    """Compute all metrics from a list of result dicts."""
-    by_type = defaultdict(list)
-    by_tier = defaultdict(list)
-
-    for r in results:
-        by_type[r["type"]].append(r)
-        by_tier[r["tier"]].append(r)
-
-    # --- Per-type accuracy ---
-    type_acc = {}
-    for qtype, items in by_type.items():
-        answered = [r for r in items if r["tier"] != "ABSTAIN"]
-        if not answered:
-            type_acc[qtype] = {"accuracy": None, "answered": 0, "total": len(items)}
-            continue
-
-        correct = 0
-        comparable = 0
-        for r in answered:
-            result = compare_one(r["gold_answer"], r["pred_answer"], qtype)
-            if result is not None:
-                comparable += 1
-                if result:
-                    correct += 1
-
-        type_acc[qtype] = {
-            "accuracy": round(correct / comparable, 4) if comparable > 0 else None,
-            "correct": correct,
-            "comparable": comparable,
-            "answered": len(answered),
-            "total": len(items),
-            "abstained": len(items) - len(answered),
-        }
-
-    # --- Overall accuracy (structured types only) ---
-    structured = [r for r in results if r["type"] not in OPEN_TYPES and r["tier"] != "ABSTAIN"]
-    correct_all = 0
-    comparable_all = 0
-    for r in structured:
-        result = compare_one(r["gold_answer"], r["pred_answer"], r["type"])
-        if result is not None:
-            comparable_all += 1
-            if result:
-                correct_all += 1
-
-    overall_acc = round(correct_all / comparable_all, 4) if comparable_all > 0 else None
-
-    # --- Selective accuracy + coverage ---
-    total_structured = len([r for r in results if r["type"] not in OPEN_TYPES])
-    answered_structured = len(structured)
-    coverage = round(answered_structured / total_structured, 4) if total_structured > 0 else 0
-
-    # --- Tier distribution ---
-    tier_dist = {t: len(items) for t, items in by_tier.items()}
-
-    # --- Binary P/R/F1 ---
-    binary = compute_binary_metrics(results)
-
-    return {
-        "overall_accuracy": overall_acc,
-        "selective_accuracy": overall_acc,
-        "coverage": coverage,
-        "per_type": type_acc,
-        "binary_prf": binary,
-        "tier_distribution": tier_dist,
-        "total_questions": len(results),
-    }
-
-
-def print_report(metrics):
-    """Print a readable report."""
-    print("=" * 60)
-    print("KRONOS Evaluation — VinDr-CXR-VQA")
-    print("=" * 60)
-
-    print(f"\nTotal questions:      {metrics['total_questions']}")
-    print(f"Overall accuracy:     {metrics['overall_accuracy']}")
-    print(f"Selective accuracy:   {metrics['selective_accuracy']}")
-    print(f"Coverage:             {metrics['coverage']}")
-
-    print(f"\nTier distribution:    {metrics['tier_distribution']}")
-
-    print("\n--- Per-type accuracy ---")
-    for qtype, info in sorted(metrics["per_type"].items()):
-        acc = info["accuracy"]
-        acc_str = f"{acc:.4f}" if acc is not None else "N/A"
-        print(f"  {qtype:12s}  acc={acc_str}  "
-              f"answered={info['answered']}/{info['total']}  "
-              f"abstained={info.get('abstained', 0)}")
-
-    b = metrics["binary_prf"]
-    print(f"\n--- Binary (Yes/No) metrics ---")
-    print(f"  Precision: {b['precision']:.4f}  Recall: {b['recall']:.4f}  F1: {b['f1']:.4f}")
-    print(f"  TP={b['tp']}  FP={b['fp']}  FN={b['fn']}  TN={b['tn']}")
-
-
-# --- Generate results by running KRONOS pipeline ---
-
-def generate_results(vqa_path, weights_path, dag_dir="data/ontology", use_real=False, limit=None):
-    """Run KRONOS on all VQA questions and return results list.
-
-    limit: if set, only process the first N images (for quick test runs).
-    """
-    import sys
-    sys.path.insert(0, ".")
-    from src.pipeline import run, VINDR_FINDINGS
-    from src.perception.detector import Detector
+def init_pipeline(weights, model_path, quantize):
     from src.ontology.dag import OntologyDAG
-    from pathlib import Path
+    from src.perception.detector import Detector
 
-    # All three files are required: dag.yaml alone leaves exclusion lists and
-    # anatomy zones unloaded, which makes every negation and "where" question abstain.
     dag = OntologyDAG(
-        f"{dag_dir}/dag.yaml",
-        f"{dag_dir}/exclusion_lists.yaml",
-        f"{dag_dir}/anatomy_zones.yaml",
+        str(ONT / "dag.yaml"),
+        str(ONT / "exclusion_lists.yaml"),
+        str(ONT / "anatomy_zones.yaml"),
     )
-    detector = Detector(weights_path, dag=dag)
+    detector = Detector(str(weights), dag=dag)
 
-    if use_real:
-        from src.agent.medgemma import MedGemmaAgent
-        from src.retrieval.index import RagIndex
-        from src.retrieval.retriever import Retriever
-        from src.retrieval.encoder import load_encoder
+    from src.agent.medgemma import MedGemmaAgent
+    agent = MedGemmaAgent(model_path=str(model_path), quantize=quantize)
 
-        print("Loading real MedGemma Agent (quantized to 4-bit)...")
-        agent = MedGemmaAgent(model_path="weights/medgemma-4b-it", quantize=True, load_model=True)
+    return dag, detector, agent
 
-        # Initialize retriever if RAG index and cases files exist
-        cases_path = Path("data/rag/vindr_cases.jsonl")
-        index_path = Path("data/rag/vindr_index.faiss")
-        if cases_path.exists() and index_path.exists():
-            print("Loading real RAG index and BiomedCLIP encoder...")
-            with open(cases_path, "r", encoding="utf-8") as f:
-                cases = [json.loads(line) for line in f]
-            index = RagIndex.load(index_path, cases)
-            encoder = load_encoder(model_path="weights/BiomedCLIP", device="cuda")
-            retriever = Retriever(index=index, encoder=encoder)
-            print("RAG index loaded successfully.")
-        else:
-            retriever = None
-            print("RAG index files not found. Running without retriever.")
-    else:
-        from src.agent.mock import MockAgent
-        agent = MockAgent()
-        retriever = None
 
-    with open(vqa_path, "r", encoding="utf-8") as f:
-        dataset = json.load(f)
+def _serialize_trace(search_result):
+    """Convert SearchResult.path into a JSON-friendly list of steps."""
+    steps = []
+    for action, obs in search_result.path:
+        steps.append({
+            "tool": action.tool,
+            "args": action.args,
+            "result": obs.result if isinstance(obs.result, (str, int, float, bool, list, dict, type(None))) else str(obs.result),
+            "ok": obs.ok,
+        })
+    return steps
 
-    if limit:
-        dataset = dataset[:limit]
 
+def run_predictions(items, dag, detector, agent):
+    from src.pipeline import run
     results = []
-    n_a = n_b = n_abs = 0
-    total_images = len(dataset)
-
-    for i, item in enumerate(dataset):
-        image_id = item["image_id"]
-        image_path = Path("data/vindr_cxr_vqa/train") / f"{image_id}.png"
+    for i, item in enumerate(items):
+        image_path = ROOT / item.image
         if not image_path.exists():
-            image_path = Path("data/vindr_cxr_vqa/test") / f"{image_id}.png"
-        if not image_path.exists():
+            print(f"  SKIP {item.id}: image not found ({image_path})")
+            results.append(None)
             continue
-
-        for qa in item["vqa"]:
-            try:
-                result = run(
-                    str(image_path), qa["question"], dag, detector, agent, retriever=retriever
-                )
-            except Exception as e:
-                result = None
-
-            tier = result.tier if result else "ABSTAIN"
-            if tier == "A":
-                n_a += 1
-            elif tier == "B":
-                n_b += 1
-            else:
-                n_abs += 1
-
-            results.append({
-                "image_id": image_id,
-                "question": qa["question"],
-                "type": qa["type"],
-                "gold_answer": qa["answer"],
-                "pred_answer": result.answer if result else "",
-                "tier": tier,
-                "pred_conf": result.conf if result else 0.0,
-                "gt_finding": qa["gt_finding"],
-                "gt_location": qa["gt_location"],
-            })
-
-        print(f"\r  [{i+1}/{total_images}] questions={len(results)}  "
-              f"A={n_a} B={n_b} ABSTAIN={n_abs}", end="", flush=True)
-
-    print()
-
+        try:
+            result = run(str(image_path), item.question, dag, detector, agent)
+            results.append(result)
+            print(result.answer)
+        except Exception as e:
+            print(f"  ERROR {item.id}: {e}")
+            results.append(None)
+        if (i + 1) % 10 == 0:
+            print(f"  {i + 1}/{len(items)} done")
     return results
 
 
+def print_report(report):
+    n = report["n"]
+    print(f"\nVinDr-CXR VQA Evaluation (n={n})")
+    print(f"  {'overall_accuracy':20s} {report['overall_accuracy']:.3f}")
+
+    print("\n  By type:")
+    for qtype, stats in sorted(report["by_type"].items()):
+        print(f"    {qtype:20s} {stats['accuracy']:.3f}  (n={stats['n']})")
+
+    print("\n  By difficulty:")
+    for diff, stats in sorted(report["by_difficulty"].items()):
+        print(f"    {diff:20s} {stats['accuracy']:.3f}  (n={stats['n']})")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--vqa", default=str(DEFAULT_VQA), help="path to vqa.json")
+    ap.add_argument("--image-dir", default=DEFAULT_IMAGE_DIR, help="image directory")
+    ap.add_argument("--limit", type=int, default=50, help="max questions (0=all)")
+    ap.add_argument("--weights", default=str(DEFAULT_WEIGHTS), help="YOLO weights")
+    ap.add_argument("--model", default=str(DEFAULT_MODEL), help="MedGemma path")
+    ap.add_argument("--out", default=None, help="output report path")
+    ap.add_argument("--quantize", action="store_true", help="4-bit quantization")
+    args = ap.parse_args()
+
+    print("Loading VQA data...")
+    items = load_vindr_vqa(args.vqa, image_dir=args.image_dir)
+    if args.limit > 0:
+        items = items[:args.limit]
+    print(f"  {len(items)} questions loaded")
+
+    print("Initializing pipeline...")
+    dag, detector, agent = init_pipeline(args.weights, args.model, args.quantize)
+
+    print("Running predictions...")
+    search_results = run_predictions(items, dag, detector, agent)
+    predictions = [r.answer if r else "" for r in search_results]
+
+    print("Grading with Gemini judge...")
+    report = grade_batch(items, predictions, gemini_complete)
+
+    # Enrich details with reasoning trace
+    for detail, sr in zip(report["details"], search_results):
+        if sr:
+            detail["tier"] = sr.tier
+            detail["conf"] = sr.conf
+            detail["trace"] = _serialize_trace(sr)
+        else:
+            detail["tier"] = "ABSTAIN"
+            detail["conf"] = 0.0
+            detail["trace"] = []
+
+    out = Path(args.out) if args.out else ROOT / "results" / "vindr_vqa_report.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    print_report(report)
+    print(f"\nReport -> {out}")
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Evaluate KRONOS on VinDr-CXR-VQA")
-    parser.add_argument("--results", type=str, help="Path to results.jsonl (pre-computed)")
-    parser.add_argument("--run", action="store_true", help="Run pipeline on dataset")
-    parser.add_argument("--use-real", action="store_true", help="Use real MedGemma agent and BiomedCLIP retriever")
-    parser.add_argument("--weights", type=str, default="weights/yolov12s_vindr.pt")
-    parser.add_argument("--vqa", type=str, default="data/vindr_cxr_vqa/vqa.json")
-    parser.add_argument("--output", type=str, default="results/results.jsonl")
-    parser.add_argument("--limit", type=int, default=None, help="Only process first N images (quick test)")
-    args = parser.parse_args()
-
-    if args.results:
-        with open(args.results, "r") as f:
-            results = [json.loads(line) for line in f]
-    elif args.run:
-        results = generate_results(args.vqa, args.weights, use_real=args.use_real, limit=args.limit)
-        with open(args.output, "w") as f:
-            for r in results:
-                f.write(json.dumps(r, ensure_ascii=False) + "\n")
-        print(f"Saved {len(results)} results to {args.output}")
-    else:
-        parser.error("Specify --results or --run")
-
-    metrics = compute_metrics(results)
-    print_report(metrics)
-
+    main()
