@@ -39,16 +39,21 @@ def _serialize_trace(search_result):
     return steps
 
 
-def init_pipeline(weights, model_path, quantize):
+def init_pipeline(weights, model_path, quantize, use_oracle=False, image_dir=None):
     from src.ontology.dag import OntologyDAG
-    from src.perception.detector import Detector
 
     dag = OntologyDAG(
         str(ONT / "dag.yaml"),
         str(ONT / "exclusion_lists.yaml"),
         str(ONT / "anatomy_zones.yaml"),
     )
-    detector = Detector(str(weights), dag=dag)
+
+    if use_oracle:
+        from src.perception.oracle import SlakeOracle
+        detector = SlakeOracle(image_dir or DEFAULT_IMAGE_DIR)
+    else:
+        from src.perception.detector import Detector
+        detector = Detector(str(weights), dag=dag)
 
     from src.agent.medgemma import MedGemmaAgent
     agent = MedGemmaAgent(model_path=str(model_path), quantize=quantize)
@@ -145,6 +150,8 @@ def main():
     ap.add_argument("--model", default=str(DEFAULT_MODEL), help="MedGemma path")
     ap.add_argument("--out", default=None, help="output report path")
     ap.add_argument("--quantize", action="store_true", help="4-bit quantization")
+    ap.add_argument("--detector", choices=["yolo", "oracle"], default="yolo",
+                    help="yolo = YOLO model, oracle = ground-truth detection.json")
     args = ap.parse_args()
 
     print("Loading SLAKE data (X-Ray, English)...")
@@ -156,8 +163,12 @@ def main():
     print("Loading SLAKE KG...")
     slake_kg = SlakeKG(args.kg_dir)
 
-    print("Initializing pipeline...")
-    dag, detector, agent = init_pipeline(args.weights, args.model, args.quantize)
+    use_oracle = args.detector == "oracle"
+    print(f"Initializing pipeline (detector={args.detector})...")
+    dag, detector, agent = init_pipeline(
+        args.weights, args.model, args.quantize,
+        use_oracle=use_oracle, image_dir=args.image_dir,
+    )
 
     print("Running predictions...")
     search_results = run_predictions(items, dag, detector, agent, slake_kg)

@@ -68,6 +68,33 @@ def test_slake_kg_organs(mini_kg):
     assert "heart" in organs
 
 
+# ── SlakeOracle tests ──
+
+from src.perception.oracle import SlakeOracle
+
+
+def test_slake_oracle_detect(tmp_path):
+    img_dir = tmp_path / "xmlab1"
+    img_dir.mkdir()
+    det = [{"Cardiomegaly": [100.0, 200.0, 300.0, 250.0]}]
+    (img_dir / "detection.json").write_text(json.dumps(det), encoding="utf-8")
+
+    oracle = SlakeOracle(str(tmp_path))
+    facts = oracle.detect(str(img_dir / "source.jpg"))
+    assert len(facts) == 1
+    assert facts[0].concept == "Cardiomegaly"
+    assert facts[0].bbox == (100.0, 200.0, 400.0, 450.0)  # x, y, x+w, y+h
+    assert facts[0].conf == 1.0
+
+
+def test_slake_oracle_no_detection(tmp_path):
+    img_dir = tmp_path / "xmlab2"
+    img_dir.mkdir()
+    oracle = SlakeOracle(str(tmp_path))
+    facts = oracle.detect(str(img_dir / "source.jpg"))
+    assert facts == []
+
+
 # ── Task 2: load_slake tests ──
 
 from src.data.loaders import load_slake, QAItem
