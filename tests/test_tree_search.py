@@ -149,6 +149,51 @@ def test_deletion_flips_answer(dag, agent):
     assert result_without.tier != "A" or result_without.answer != result_with.answer
 
 
+# --- open type: direct answer from facts ---
+
+def test_open_with_facts_not_abstain(dag, agent):
+    """Open question with detected facts → non-ABSTAIN result."""
+    from src.search.tree_search import search
+    facts = [_fact("Cardiomegaly"), _fact("Consolidation")]
+    query = _query("open")
+    result = search(query, facts, dag, agent)
+    assert result.tier != "ABSTAIN"
+    assert result.answer != ""
+
+
+def test_derive_answer_open_joins_concepts(dag):
+    """_derive_answer for open type lists detected fact concepts."""
+    from src.search.tree_search import _derive_answer
+    node = TreeNode(
+        state_facts=[_fact("Cardiomegaly"), _fact("Consolidation")],
+        history=[],
+    )
+    query = _query("open")
+    answer = _derive_answer(node, query)
+    assert "Cardiomegaly" in answer
+    assert "Consolidation" in answer
+
+
+def test_open_no_facts_tier_b(dag, agent):
+    """Open question with no facts → Tier B (ungrounded)."""
+    from src.search.tree_search import search
+    query = _query("open")
+    result = search(query, [], dag, agent)
+    assert result.tier == "B"
+
+
+# --- relational with no target ---
+
+def test_relational_no_target_uses_first_fact(dag, agent):
+    """Relational question with target=None uses the first fact's bbox."""
+    from src.search.tree_search import search
+    facts = [_fact("Consolidation", bbox=(250, 180, 420, 350), lat="right")]
+    query = _query("relational", target=None, constraints={"attr": "location"})
+    result = search(query, facts, dag, agent, img_wh=(512, 512))
+    assert result.tier == "A"
+    assert result.answer != ""
+
+
 # --- reflection loop: verifier reason is fed back to the agent ---
 
 class _ReflectionSpyAgent:

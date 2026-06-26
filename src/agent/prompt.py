@@ -64,6 +64,8 @@ def build_prompt(node, query, k=3):
     parts.append(f"Question type: {query.type}")
     if query.target:
         parts.append(f"Target: {query.target}")
+    elif query.type == "relational" and node.state_facts:
+        parts.append("Target: (not specified — use the most prominent finding from evidence facts)")
 
     parts.append("\nEvidence facts:")
     if node.state_facts:
@@ -86,6 +88,9 @@ def build_prompt(node, query, k=3):
     parts.append(f"\nRespond with up to {k} actions as a JSON array, e.g.:")
     parts.append('[{"tool": "is_a", "args": {"node": "cardiomegaly", "target": "cardiac_abnormality"}}]')
     parts.append('Or if you have enough evidence: Answer[your answer here]')
+
+    if query.type == "open" and node.state_facts:
+        parts.append("\nYou have detected findings listed above. Summarize them to answer the question. Emit Answer[your answer] directly.")
 
     return "\n".join(parts)
 
