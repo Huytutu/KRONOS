@@ -23,6 +23,8 @@ def closure_progress(node, query, dag):
         return 1.0
     if qtype == "shared_cause":
         return _progress_shared_cause(node, query, dag)
+    if qtype == "open":
+        return _progress_open(node)
     return 0.0
 
 
@@ -31,10 +33,10 @@ def verify(node, query, dag):
     path = list(node.history)
 
     if qtype == "open":
-        return SearchResult(
-            answer=node.answer or "", tier="B", path=path,
-            conf=_min_conf(node),
-        )
+        if node.answer:
+            tier = "A" if node.state_facts else "B"
+            return SearchResult(answer=node.answer, tier=tier, path=path, conf=_min_conf(node))
+        return SearchResult(answer="", tier="ABSTAIN", path=path, conf=0.0)
 
     if qtype == "existential":
         return _verify_existential(node, query, dag)
@@ -202,6 +204,12 @@ def _verify_counting(node, query, dag):
     return SearchResult(
         answer=node.answer or str(count), tier="A", path=path, conf=1.0,
     )
+
+
+# --- open ---
+
+def _progress_open(node):
+    return 0.5 if node.state_facts else 0.0
 
 
 # --- shared_cause ---
