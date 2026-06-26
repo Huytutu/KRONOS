@@ -65,7 +65,6 @@ def run_predictions(items, dag, detector, agent):
         try:
             result = run(str(image_path), item.question, dag, detector, agent)
             results.append(result)
-            print(result.answer)
         except Exception as e:
             print(f"  ERROR {item.id}: {e}")
             results.append(None)
