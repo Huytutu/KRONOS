@@ -258,12 +258,48 @@ def test_verify_counting_tier_a(dag):
     assert result.answer == "2"
 
 
-def test_verify_open_tier_b(dag):
+def test_verify_open_with_answer_and_facts_tier_a(dag):
+    """Open question with answer grounded in detected facts → Tier A."""
     from src.engine.verifier import verify
     node = TreeNode(state_facts=[_fact("Cardiomegaly")], history=[], answer="Cardiomegaly visible")
     query = _query("open")
     result = verify(node, query, dag)
+    assert result.tier == "A"
+    assert result.answer == "Cardiomegaly visible"
+
+
+def test_verify_open_with_answer_no_facts_tier_b(dag):
+    """Open question with answer but no facts → Tier B (ungrounded guess)."""
+    from src.engine.verifier import verify
+    node = TreeNode(state_facts=[], history=[], answer="Cardiomegaly visible")
+    query = _query("open")
+    result = verify(node, query, dag)
     assert result.tier == "B"
+
+
+def test_verify_open_no_answer_abstain(dag):
+    """Open question with no answer → ABSTAIN."""
+    from src.engine.verifier import verify
+    node = TreeNode(state_facts=[_fact("Cardiomegaly")], history=[])
+    query = _query("open")
+    result = verify(node, query, dag)
+    assert result.tier == "ABSTAIN"
+
+
+def test_closure_progress_open_with_facts(dag):
+    """Open type with detected facts → 0.5 (enough to stay in frontier)."""
+    from src.engine.verifier import closure_progress
+    node = TreeNode(state_facts=[_fact("Cardiomegaly")], history=[])
+    query = _query("open")
+    assert closure_progress(node, query, dag) == 0.5
+
+
+def test_closure_progress_open_no_facts(dag):
+    """Open type with no facts → 0.0 (nothing to summarize)."""
+    from src.engine.verifier import closure_progress
+    node = TreeNode(state_facts=[], history=[])
+    query = _query("open")
+    assert closure_progress(node, query, dag) == 0.0
 
 
 # --- tier B fallback: agent answer preserved when DAG can't verify ---

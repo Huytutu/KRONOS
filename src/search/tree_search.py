@@ -134,6 +134,11 @@ def _derive_answer(node, query):
     if qtype == "shared_cause":
         return _derive_shared_cause(node, query)
 
+    if qtype == "open":
+        if node.state_facts:
+            return ", ".join(sorted({f.concept for f in node.state_facts}))
+        return ""
+
     return ""
 
 

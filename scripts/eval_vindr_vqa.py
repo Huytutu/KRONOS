@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT))
 
 from src.data.loaders import load_vindr_vqa
 from src.eval.vindr_vqa_metrics import grade_batch
-from src.llm.gemini_client import complete as gemini_complete
+from src.llm.groq_client import complete as groq_complete
 
 ONT = ROOT / "data" / "ontology"
 DEFAULT_VQA = ROOT / "data" / "vindr_cxr_vqa" / "vqa.json"
@@ -112,8 +112,8 @@ def main():
     search_results = run_predictions(items, dag, detector, agent)
     predictions = [r.answer if r else "" for r in search_results]
 
-    print("Grading with Gemini judge...")
-    report = grade_batch(items, predictions, gemini_complete)
+    print("Grading with Groq judge...")
+    report = grade_batch(items, predictions, groq_complete)
 
     # Enrich details with reasoning trace
     for detail, sr in zip(report["details"], search_results):
