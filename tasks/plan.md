@@ -1,34 +1,40 @@
-# SLAKE VQA Evaluation — Build Plan
+# Fix VinDr VQA ABSTAIN Rate — Build Plan
 
-Spec: `eval_slake_SPEC.md`
+Spec: `fix_vindr_abstain_SPEC.md`
 
 ## Tasks
 
-### Task 1: SlakeKG loader
-**File:** `src/knowledge/slake_kg.py`
-**What:** Load 3 SLAKE KG CSVs into a dict-of-dicts. `lookup(entity, relation)` returns value or None. `diseases()` and `organs()` list entity names.
+### Task 1: Add `closure_progress` and `verify` for `open` type
+**Files:** `src/engine/verifier.py`, `tests/test_verifier.py`
+**What:** Add `_progress_open(node)` returning 0.5 when facts exist, 0.0 otherwise. Update `verify()` open branch: answer + facts → Tier A, answer only → Tier B, empty → ABSTAIN.
 **Depends on:** nothing
-**Acceptance:** Unit tests verify lookup hit, lookup miss, diseases/organs listing.
+**Acceptance:**
+- `closure_progress` for open + facts → 0.5
+- `closure_progress` for open + no facts → 0.0
+- `verify` for open + answer + facts → Tier A
+- `verify` for open + answer + no facts → Tier B
+- `verify` for open + no answer → ABSTAIN
+- Existing `test_verify_open_tier_b` updated to match new Tier A behavior
 
-### Task 2: SLAKE data loader
-**File:** `src/data/loaders.py` (modify)
-**What:** Add `load_slake()` returning `List[QAItem]`, filtered by modality and language. Add to LOADERS dict.
-**Depends on:** nothing
-**Acceptance:** Test verifies X-Ray filtering and QAItem shape.
-
-### Task 3: Register slake_kg tool
-**Files:** `src/contracts.py` (add to ToolName), `src/tools/dispatch.py` (route slake_kg)
-**What:** Add "slake_kg" to ToolName literal. Route it in dispatch to SlakeKG.lookup().
+### Task 2: Add `_derive_answer` for `open` type + prompt hints
+**Files:** `src/search/tree_search.py`, `src/agent/prompt.py`, `tests/test_tree_search.py`
+**What:** Add open branch in `_derive_answer` that joins fact concepts. Add prompt hint for open type ("emit Answer[...] directly"). Add prompt hint for relational with target=None ("use most prominent finding").
 **Depends on:** Task 1
-**Acceptance:** Test verifies dispatch routes slake_kg action correctly.
+**Acceptance:**
+- `_derive_answer` for open + facts → comma-joined concepts
+- `build_prompt` for open includes direct-answer hint
+- `build_prompt` for relational + target=None includes fallback hint
+- Tree search for open + facts → non-ABSTAIN result
 
-### Task 4: Eval grading + CLI runner
-**Files:** `scripts/eval_slake.py`
-**What:** CLI runner with exact-match grading, breakdown by content_type and answer_type, reasoning trace in report.
-**Depends on:** Task 1, 2, 3
-**Acceptance:** CLI smoke test with mocked pipeline writes valid JSON report.
+### Task 3: Switch VinDr judge to Groq
+**Files:** `scripts/eval_vindr_vqa.py`
+**What:** Replace gemini import with groq import for LLM judge.
+**Depends on:** nothing
+**Acceptance:**
+- `eval_vindr_vqa.py` imports `groq_client.complete`
+- No reference to `gemini_client` in eval script
 
-### Task 5: Final test suite verification
+### Task 4: Regression test suite
 **What:** Run full `pytest tests/ -m "not gpu"` to verify no regressions.
-**Depends on:** Task 1-4
+**Depends on:** Task 1, 2, 3
 **Acceptance:** All tests pass.
