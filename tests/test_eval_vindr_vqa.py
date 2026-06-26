@@ -133,7 +133,7 @@ def test_cli_smoke(tmp_path):
 
     with patch("scripts.eval_vindr_vqa.init_pipeline") as mock_init, \
          patch("scripts.eval_vindr_vqa.run_predictions", return_value=[_mock_sr("Yes"), _mock_sr("Center")]), \
-         patch("scripts.eval_vindr_vqa.gemini_complete", side_effect=lambda p: "CORRECT"):
+         patch("scripts.eval_vindr_vqa.groq_complete", side_effect=lambda p: "CORRECT"):
         mock_init.return_value = (MagicMock(), MagicMock(), MagicMock())
 
         from scripts.eval_vindr_vqa import main
